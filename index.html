@@ -6,122 +6,128 @@
     <title>AB OS | الإدارة السحابية</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
-    <!-- المكتبات المطلوبة لتشغيل كود React و Firebase داخل ملف واحد -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <style>
-        body { font-family: 'Cairo', sans-serif; background-color: #020202; color: white; margin: 0; }
-        .glass { background: rgba(10, 10, 10, 0.8); backdrop-filter: blur(15px); border: 1px solid rgba(255,255,255,0.05); }
+        body { font-family: 'Cairo', sans-serif; background-color: #020202; color: white; margin: 0; overflow-x: hidden; }
+        .glass { background: rgba(15, 15, 15, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.05); }
+        .ab-gradient { background: linear-gradient(135deg, #5865F2 0%, #3a44a7 100%); }
         ::-webkit-scrollbar { display: none; }
+        .animate-float { animation: float 6s ease-in-out infinite; }
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        // إعدادات الربط السحابي (تستخدم القيم الافتراضية للبيئة)
-        const firebaseConfig = JSON.parse(__firebase_config);
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
-        const auth = firebase.auth();
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'ab-os-cloud-v11';
-
         const { useState, useEffect } = React;
+
+        // نظام تخزين محلي بسيط ليعمل الموقع فوراً بدون تعقيدات ربط خارجية حالياً
+        const saveToLocal = (data) => localStorage.setItem('ab_os_data', JSON.stringify(data));
+        const getFromLocal = () => {
+            const data = localStorage.getItem('ab_os_data');
+            return data ? JSON.parse(data) : {};
+        };
 
         function App() {
             const [view, setView] = useState('login');
             const [accessCode, setAccessCode] = useState('');
             const [isAdmin, setIsAdmin] = useState(false);
-            const [user, setUser] = useState(null);
-            const [staff, setStaff] = useState({});
-            const [loading, setLoading] = useState(true);
+            const [staff, setStaff] = useState(getFromLocal());
             const [modal, setModal] = useState({ type: null, targetCode: null });
             const [inputVal, setInputVal] = useState('');
             const [inputVal2, setInputVal2] = useState('');
             const [inputVal3, setInputVal3] = useState('');
 
             useEffect(() => {
-                const initAuth = async () => {
-                    try {
-                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            await auth.signInWithCustomToken(__initial_auth_token);
-                        } else {
-                            await auth.signInAnonymously();
-                        }
-                    } catch (e) {}
-                };
-                initAuth();
-                const unsubscribe = auth.onAuthStateChanged(setUser);
-                return () => unsubscribe();
-            }, []);
-
-            useEffect(() => {
-                if (!user) return;
-                const unsub = db.collection('artifacts').doc(appId).collection('public').doc('data')
-                    .collection('staffMembers').onSnapshot((snapshot) => {
-                        const staffData = {};
-                        snapshot.forEach((doc) => { staffData[doc.id] = doc.data(); });
-                        setStaff(staffData);
-                        setLoading(false);
-                    }, () => setLoading(false));
-                return () => unsub();
-            }, [user]);
+                saveToLocal(staff);
+            }, [staff]);
 
             const handleLogin = () => {
-                if (accessCode === "777") { setIsAdmin(true); setView('dashboard'); }
-                else if (staff[accessCode]) { setIsAdmin(false); setView('dashboard'); }
-                else { setModal({ type: 'error' }); }
+                if (accessCode === "777") {
+                    setIsAdmin(true);
+                    setView('dashboard');
+                } else if (staff[accessCode]) {
+                    setIsAdmin(false);
+                    setView('dashboard');
+                } else {
+                    setModal({ type: 'error' });
+                }
             };
 
-            const updateCloud = async (code, data) => {
-                await db.collection('artifacts').doc(appId).collection('public').doc('data')
-                    .collection('staffMembers').doc(code).set(data, { merge: true });
+            const addStaff = () => {
+                if (inputVal && inputVal2) {
+                    setStaff(prev => ({
+                        ...prev,
+                        [inputVal2]: { name: inputVal, rank: inputVal3 || 'عضو كادر', tasks: [], warnings: 0 }
+                    }));
+                    closeModal();
+                }
             };
 
-            const toggleTaskStatus = async (code, taskId) => {
+            const addTask = () => {
+                if (inputVal && modal.targetCode) {
+                    const newId = Date.now().toString();
+                    setStaff(prev => ({
+                        ...prev,
+                        [modal.targetCode]: {
+                            ...prev[modal.targetCode],
+                            tasks: [...(prev[modal.targetCode].tasks || []), { id: newId, text: inputVal, done: false }]
+                        }
+                    }));
+                    closeModal();
+                }
+            };
+
+            const toggleTask = (code, taskId) => {
                 if (!isAdmin) return;
-                const newTasks = staff[code].tasks.map(t => t.id === taskId ? { ...t, done: !t.done } : t);
-                await updateCloud(code, { tasks: newTasks });
+                setStaff(prev => ({
+                    ...prev,
+                    [code]: {
+                        ...prev[code],
+                        tasks: prev[code].tasks.map(t => t.id === taskId ? { ...t, done: !t.done } : t)
+                    }
+                }));
             };
 
-            const updateWarning = async (code, inc) => {
+            const updateWarning = (code, inc) => {
                 const cur = staff[code].warnings || 0;
                 const val = inc ? Math.min(cur + 1, 3) : Math.max(cur - 1, 0);
-                await updateCloud(code, { warnings: val });
+                setStaff(prev => ({
+                    ...prev,
+                    [code]: { ...prev[code], warnings: val }
+                }));
             };
 
-            const confirmAction = async () => {
-                if (modal.type === 'addStaff' && inputVal && inputVal2) {
-                    await updateCloud(inputVal2, { name: inputVal, rank: inputVal3 || 'إداري', tasks: [], warnings: 0 });
-                } else if (modal.type === 'addTask' && inputVal) {
-                    const newT = { id: Date.now().toString(), text: inputVal, done: false };
-                    await updateCloud(modal.targetCode, { tasks: [...(staff[modal.targetCode].tasks || []), newT] });
-                } else if (modal.type === 'deleteStaff') {
-                    await db.collection('artifacts').doc(appId).collection('public').doc('data')
-                        .collection('staffMembers').doc(modal.targetCode).delete();
-                }
+            const deleteStaff = (code) => {
+                const newStaff = { ...staff };
+                delete newStaff[code];
+                setStaff(newStaff);
                 closeModal();
             };
 
             const closeModal = () => { setModal({ type: null }); setInputVal(''); setInputVal2(''); setInputVal3(''); };
-            const calculateProgress = (tasks = []) => {
+            const calcProgress = (tasks = []) => {
                 if (tasks.length === 0) return 0;
                 return Math.round((tasks.filter(t => t.done).length / tasks.length) * 100);
             };
 
-            if (loading) return <div className="min-h-screen bg-[#020202] flex items-center justify-center italic opacity-20 uppercase tracking-widest">System Link Active...</div>;
-
             if (view === 'login') return (
-                <div className="min-h-screen bg-[#020202] flex flex-col items-center justify-center p-6 text-right">
-                    <div className="glass p-12 rounded-[4rem] border border-white/5 w-full max-w-sm shadow-2xl text-center">
-                        <div className="text-8xl font-black text-[#5865F2] mb-4 italic">AB</div>
-                        <p className="text-white/20 text-[10px] mb-12 font-bold uppercase tracking-[0.6em]">Management Cloud</p>
-                        <input type="password" placeholder="كود الدخول" className="w-full bg-black p-5 rounded-2xl text-center mb-6 border border-white/5 outline-none focus:border-[#5865F2] text-white font-bold" value={accessCode} onChange={e => setAccessCode(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} />
-                        <button onClick={handleLogin} className="w-full bg-[#5865F2] text-white py-5 rounded-2xl font-black shadow-lg hover:brightness-110 active:scale-95 transition-all uppercase italic">Login</button>
+                <div className="min-h-screen flex items-center justify-center p-6">
+                    <div className="glass p-10 rounded-[3rem] w-full max-w-sm text-center shadow-2xl border-white/10">
+                        <div className="text-7xl font-black text-[#5865F2] mb-2 italic animate-pulse">AB</div>
+                        <p className="text-white/30 text-[10px] mb-10 font-bold uppercase tracking-[0.4em]">Cloud OS v1.0</p>
+                        <input 
+                            type="password" 
+                            placeholder="كود الدخول السحابي" 
+                            className="w-full bg-white/5 p-5 rounded-2xl text-center mb-4 border border-white/10 outline-none focus:border-[#5865F2] transition-all"
+                            value={accessCode}
+                            onChange={e => setAccessCode(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                        />
+                        <button onClick={handleLogin} className="w-full ab-gradient py-5 rounded-2xl font-black shadow-lg hover:scale-[1.02] active:scale-95 transition-all italic">ENTER SYSTEM</button>
                     </div>
                 </div>
             );
@@ -129,76 +135,81 @@
             const curUser = isAdmin ? { name: "المدير العام", rank: "FOUNDER" } : staff[accessCode];
 
             return (
-                <div className="min-h-screen bg-[#020202] text-white font-sans pb-24">
-                    <nav className="bg-black/60 backdrop-blur-2xl p-5 border-b border-white/5 flex justify-between items-center px-8 sticky top-0 z-[100]">
+                <div className="min-h-screen pb-20">
+                    <nav className="glass sticky top-0 z-50 p-5 px-8 flex justify-between items-center border-b border-white/5">
                         <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 bg-[#5865F2] rounded-xl flex items-center justify-center font-black italic shadow-lg">AB</div>
+                            <div className="w-10 h-10 ab-gradient rounded-xl flex items-center justify-center font-black italic shadow-lg shadow-[#5865F2]/20">AB</div>
                             <div className="text-right">
                                 <p className="font-black text-sm">{curUser?.name}</p>
-                                <p className="text-[9px] text-[#5865F2] font-black tracking-widest">{curUser?.rank}</p>
+                                <p className="text-[9px] text-[#5865F2] font-black tracking-tighter opacity-80">{curUser?.rank}</p>
                             </div>
                         </div>
-                        <button onClick={() => setView('login')} className="text-white/20 text-[10px] font-black uppercase border border-white/5 px-4 py-2 rounded-xl">Exit</button>
+                        <button onClick={() => setView('login')} className="text-white/20 text-[10px] font-black uppercase border border-white/5 px-4 py-2 rounded-xl hover:bg-white/5 transition-all">Logout</button>
                     </nav>
 
-                    <div className="max-w-2xl mx-auto p-6 pt-10">
+                    <div className="max-w-2xl mx-auto p-6 mt-6">
                         {isAdmin ? (
                             <div className="space-y-6">
-                                <button onClick={() => setModal({ type: 'addStaff' })} className="w-full bg-white text-black py-6 rounded-[3rem] font-black text-sm shadow-xl active:scale-95 transition-all italic">إضافة كادر جديد +</button>
-                                <div className="space-y-6">
-                                    {Object.keys(staff).map(id => (
-                                        <div key={id} className="glass rounded-[3.5rem] border border-white/5 p-8 relative overflow-hidden shadow-2xl">
-                                            <div className="flex justify-between items-start mb-6">
-                                                <div className="flex items-center gap-4">
-                                                    <div className="w-14 h-14 bg-black rounded-2xl flex items-center justify-center border border-white/5 text-[#5865F2] font-black italic text-2xl">{staff[id].name[0]}</div>
-                                                    <div className="text-right">
-                                                        <h4 className="font-black text-lg leading-none mb-1">{staff[id].name}</h4>
-                                                        <p className="text-[10px] opacity-20 uppercase font-black tracking-widest">ID: {id}</p>
-                                                    </div>
-                                                </div>
-                                                <button onClick={() => setModal({ type: 'deleteStaff', targetCode: id })} className="text-white/5 text-xs hover:text-red-500">×</button>
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-4 mb-8">
-                                                <div className="bg-black/40 p-4 rounded-3xl border border-white/5">
-                                                    <div className="flex justify-between text-[9px] uppercase font-black opacity-30 mb-3 tracking-widest"><span>التحذيرات</span><div className="flex gap-2"><button onClick={()=>updateWarning(id, true)} className="text-red-500">+</button><button onClick={()=>updateWarning(id, false)}>-</button></div></div>
-                                                    <div className="flex gap-1">{[1,2,3].map(i=>(<div key={i} className={`h-2 flex-1 rounded-full ${staff[id].warnings>=i?'bg-red-600 shadow-[0_0_10px_red]':'bg-white/5'}`}></div>))}</div>
-                                                </div>
-                                                <div className="bg-black/40 p-4 rounded-3xl border border-white/5">
-                                                    <div className="flex justify-between text-[9px] uppercase font-black opacity-30 mb-1 tracking-widest"><span>الإنجاز</span><span>{calculateProgress(staff[id].tasks)}%</span></div>
-                                                    <div className="h-2 bg-black rounded-full overflow-hidden mt-3"><div className="h-full bg-[#5865F2] transition-all duration-1000" style={{width:`${calculateProgress(staff[id].tasks)}%`}}></div></div>
+                                <button onClick={() => setModal({ type: 'addStaff' })} className="w-full bg-white text-black py-6 rounded-[2.5rem] font-black shadow-2xl hover:bg-gray-200 active:scale-95 transition-all text-sm uppercase italic">+ تسجيل كادر جديد</button>
+                                
+                                {Object.keys(staff).length === 0 && <p className="text-center py-20 text-white/10 font-black italic">لا يوجد أعضاء مسجلين في القاعدة حالياً</p>}
+
+                                {Object.keys(staff).map(id => (
+                                    <div key={id} className="glass rounded-[3rem] p-7 border border-white/5 shadow-xl relative overflow-hidden">
+                                        <div className="flex justify-between items-start mb-6">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-14 h-14 bg-black rounded-2xl flex items-center justify-center border border-white/5 text-[#5865F2] font-black text-2xl italic shadow-inner">{staff[id].name[0]}</div>
+                                                <div className="text-right">
+                                                    <h4 className="font-black text-lg">{staff[id].name}</h4>
+                                                    <p className="text-[10px] opacity-30 font-bold">ID: {id} • {staff[id].rank}</p>
                                                 </div>
                                             </div>
-                                            <button onClick={()=>setModal({type:'addTask', targetCode:id})} className="w-full bg-[#5865F2] py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.3em] mb-4 shadow-lg active:scale-95 transition-all">ارسال بروتوكول</button>
-                                            <div className="space-y-2">
-                                                {staff[id].tasks?.map(t=>(
-                                                    <div key={t.id} onClick={()=>toggleTaskStatus(id, t.id)} className={`flex items-center gap-4 p-4 rounded-2xl border border-white/5 cursor-pointer transition-all ${t.done?'opacity-20 bg-green-500/5':'bg-black/50'}`}>
-                                                        <div className={`w-4 h-4 rounded-full border-2 ${t.done?'bg-green-500 border-green-500':'border-white/10'}`}></div>
-                                                        <span className={`text-[12px] font-black ${t.done?'line-through':''}`}>{t.text}</span>
-                                                    </div>
-                                                ))}
+                                            <button onClick={() => setModal({ type: 'deleteConfirm', targetCode: id })} className="text-white/10 hover:text-red-500 transition-colors text-xl">×</button>
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-2 gap-4 mb-6">
+                                            <div className="bg-black/30 p-4 rounded-3xl border border-white/5">
+                                                <div className="flex justify-between text-[9px] font-black opacity-30 mb-3"><span>التحذيرات</span><div className="flex gap-2 items-center"><button onClick={()=>updateWarning(id, true)} className="text-red-500 text-lg">+</button><button onClick={()=>updateWarning(id, false)} className="text-white text-lg">-</button></div></div>
+                                                <div className="flex gap-1.5">{[1,2,3].map(i=>(<div key={i} className={`h-2 flex-1 rounded-full ${staff[id].warnings>=i?'bg-red-600 shadow-[0_0_10px_rgba(220,38,38,0.5)]':'bg-white/5'}`}></div>))}</div>
+                                            </div>
+                                            <div className="bg-black/30 p-4 rounded-3xl border border-white/5">
+                                                <div className="flex justify-between text-[9px] font-black opacity-30 mb-2"><span>الإنجاز</span><span>{calcProgress(staff[id].tasks)}%</span></div>
+                                                <div className="h-2 bg-black/50 rounded-full overflow-hidden mt-3"><div className="h-full ab-gradient transition-all duration-700" style={{width:`${calcProgress(staff[id].tasks)}%`}}></div></div>
                                             </div>
                                         </div>
-                                    ))}
-                                </div>
+
+                                        <button onClick={()=>setModal({type:'addTask', targetCode:id})} className="w-full bg-[#5865F2]/10 text-[#5865F2] py-4 rounded-2xl font-black text-[10px] border border-[#5865F2]/20 mb-4 hover:bg-[#5865F2]/20 transition-all uppercase italic">إرسال بروتوكول جديد</button>
+
+                                        <div className="space-y-2">
+                                            {staff[id].tasks?.map(t=>(
+                                                <div key={t.id} onClick={()=>toggleTask(id, t.id)} className={`flex items-center gap-4 p-4 rounded-2xl border transition-all cursor-pointer ${t.done?'opacity-20 bg-green-500/5 border-green-500/10':'bg-black/40 border-white/5'}`}>
+                                                    <div className={`w-4 h-4 rounded-full border-2 ${t.done?'bg-green-500 border-green-500':'border-white/20'}`}></div>
+                                                    <span className={`text-xs font-bold ${t.done?'line-through':''}`}>{t.text}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         ) : (
-                            <div className="space-y-8 animate-in slide-in-from-bottom-5 duration-700">
-                                <div className="glass p-12 rounded-[4rem] text-center relative overflow-hidden shadow-2xl">
-                                    <div className="w-32 h-32 bg-black rounded-[3rem] border border-white/5 flex items-center justify-center mx-auto mb-6 text-[#5865F2] font-black text-6xl italic shadow-2xl">{curUser?.name[0]}</div>
-                                    <h2 className="text-4xl font-black italic tracking-tighter">{curUser?.name}</h2>
-                                    <p className="text-[10px] text-[#5865F2] font-black uppercase mb-10 tracking-[0.5em]">{curUser?.rank}</p>
-                                    <div className="grid grid-cols-2 gap-5">
-                                        <div className="bg-black/60 p-8 rounded-[2.5rem] border border-white/5 text-right"><p className="text-[10px] opacity-20 uppercase font-black mb-4 tracking-widest">Warnings</p><div className="flex gap-2">{[1,2,3].map(i=>(<div key={i} className={`h-2.5 flex-1 rounded-full ${curUser.warnings>=i?'bg-red-600 shadow-[0_0_15px_red]':'bg-white/5'}`}></div>))}</div></div>
-                                        <div className="bg-black/60 p-8 rounded-[2.5rem] border border-white/5 text-right"><p className="text-[10px] opacity-20 uppercase font-black mb-1 tracking-widest">Efficiency</p><p className="text-3xl font-black italic">{calculateProgress(curUser?.tasks)}%</p></div>
+                            <div className="space-y-8">
+                                <div className="glass p-10 rounded-[4rem] text-center shadow-2xl relative overflow-hidden">
+                                    <div className="w-28 h-28 ab-gradient rounded-[2.5rem] flex items-center justify-center mx-auto mb-6 text-white font-black text-5xl italic shadow-2xl animate-float">{curUser?.name[0]}</div>
+                                    <h2 className="text-4xl font-black italic">{curUser?.name}</h2>
+                                    <p className="text-[10px] text-[#5865F2] font-black uppercase tracking-[0.4em] mb-10">{curUser?.rank}</p>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="bg-black/40 p-6 rounded-[2rem] border border-white/5 text-right"><p className="text-[9px] opacity-20 font-black mb-3">WARNINGS</p><div className="flex gap-2">{[1,2,3].map(i=>(<div key={i} className={`h-2.5 flex-1 rounded-full ${curUser.warnings>=i?'bg-red-600 shadow-[0_0_15px_red]':'bg-white/5'}`}></div>))}</div></div>
+                                        <div className="bg-black/40 p-6 rounded-[2rem] border border-white/5 text-right"><p className="text-[9px] opacity-20 font-black mb-1">EFFICIENCY</p><p className="text-3xl font-black italic">{calcProgress(curUser?.tasks)}%</p></div>
                                     </div>
                                 </div>
-                                <div className="glass p-10 rounded-[3.5rem] border border-white/5 shadow-2xl">
-                                    <p className="text-[10px] font-black uppercase opacity-20 mb-8 tracking-[0.4em] text-right">Operation Orders</p>
-                                    <div className="space-y-4">
+                                <div className="glass p-8 rounded-[3rem] border border-white/5">
+                                    <p className="text-[10px] font-black opacity-20 mb-6 tracking-widest text-right">المهمات النشطة</p>
+                                    <div className="space-y-3">
+                                        {curUser?.tasks?.length === 0 && <p className="text-center py-10 opacity-20 italic">لا توجد أوامر حالية</p>}
                                         {curUser?.tasks?.map(t=>(
-                                            <div key={t.id} className={`p-8 rounded-[2.5rem] border flex items-center gap-6 ${t.done?'bg-green-500/5 border-green-500/10':'bg-black/40 border-white/5 shadow-xl'}`}>
-                                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl font-black ${t.done?'bg-green-500 text-white shadow-[0_0_20px_rgba(34,197,94,0.3)]':'bg-black border border-white/10 text-white/20'}`}>{t.done?'✓':'!'}</div>
-                                                <div className="text-right"><p className={`font-black text-lg leading-tight ${t.done?'opacity-20 line-through text-white':'text-white'}`}>{t.text}</p><p className="text-[9px] opacity-10 uppercase mt-1 font-black tracking-widest">{t.done?'Completed Protocol':'Active Mission'}</p></div>
+                                            <div key={t.id} className={`p-6 rounded-[2rem] flex items-center gap-5 border ${t.done?'bg-green-500/5 border-green-500/10 opacity-40':'bg-black/50 border-white/5 shadow-xl'}`}>
+                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black ${t.done?'bg-green-600 text-white':'bg-white/5 text-[#5865F2]'}`}>{t.done?'✓':'!'}</div>
+                                                <div className="text-right"><p className="font-bold text-sm">{t.text}</p><p className="text-[8px] opacity-30 mt-1 font-black uppercase">{t.done?'تم التنفيذ بنجاح':'انتظار البروتوكول'}</p></div>
                                             </div>
                                         ))}
                                     </div>
@@ -208,15 +219,38 @@
                     </div>
 
                     {modal.type && (
-                        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6 bg-black/95 backdrop-blur-xl transition-all">
-                            <div className="glass w-full max-w-sm p-12 rounded-[4rem] border border-white/10 text-right shadow-2xl">
-                                {modal.type === 'addStaff' && <div className="space-y-5"><h3 className="text-white font-black text-center mb-8 text-xl italic tracking-tight">إضافة كادر جديد</h3><input value={inputVal} onChange={e=>setInputVal(e.target.value)} className="w-full bg-black p-5 rounded-2xl text-white text-right border border-white/5 font-bold" placeholder="الاسم الكامل"/><input value={inputVal2} onChange={e=>setInputVal2(e.target.value)} className="w-full bg-black p-5 rounded-2xl text-white text-right border border-white/5 font-bold" placeholder="رمز الدخول الخاص"/><input value={inputVal3} onChange={e=>setInputVal3(e.target.value)} className="w-full bg-black p-5 rounded-2xl text-white text-right border border-white/5 font-bold" placeholder="الرتبة (مثال: إداري)"/></div>}
-                                {modal.type === 'addTask' && <div className="space-y-4"><h3 className="text-white font-black text-center mb-8 text-xl italic">إرسال بروتوكول مهمة</h3><textarea value={inputVal} onChange={e=>setInputVal(e.target.value)} className="w-full bg-black p-6 rounded-3xl text-white text-right border border-white/5 h-40 resize-none font-bold" placeholder="اكتب تفاصيل المهمة هنا..."/></div>}
-                                {modal.type === 'error' && <div className="text-center py-10"><div className="text-6xl mb-6 text-red-600 drop-shadow-[0_0_15px_red]">×</div><p className="font-black text-xl italic tracking-tighter">رمز الدخول غير معترف به في القاعدة</p></div>}
-                                <div className="flex flex-col gap-3 mt-10">
-                                    {modal.type !== 'error' && <button onClick={confirmAction} className="bg-[#5865F2] text-white py-5 rounded-2xl font-black shadow-lg shadow-[#5865F2]/20 italic">EXECUTE</button>}
-                                    <button onClick={closeModal} className="text-white/20 py-4 font-black uppercase tracking-widest text-[10px]">Close System</button>
-                                </div>
+                        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6 bg-black/90 backdrop-blur-md">
+                            <div className="glass w-full max-w-sm p-10 rounded-[3.5rem] border-white/10 text-right shadow-2xl">
+                                {modal.type === 'addStaff' && (
+                                    <div className="space-y-4">
+                                        <h3 className="text-white font-black text-center mb-6 text-xl italic">تسجيل كادر جديد</h3>
+                                        <input value={inputVal} onChange={e=>setInputVal(e.target.value)} className="w-full bg-black/50 p-5 rounded-2xl text-white border border-white/10 font-bold" placeholder="الاسم الكامل"/>
+                                        <input value={inputVal2} onChange={e=>setInputVal2(e.target.value)} className="w-full bg-black/50 p-5 rounded-2xl text-white border border-white/10 font-bold" placeholder="كود الدخول المخصص"/>
+                                        <input value={inputVal3} onChange={e=>setInputVal3(e.target.value)} className="w-full bg-black/50 p-5 rounded-2xl text-white border border-white/10 font-bold" placeholder="الرتبة / التخصص"/>
+                                        <button onClick={addStaff} className="w-full ab-gradient py-5 rounded-2xl font-black mt-4">حفظ في النظام</button>
+                                    </div>
+                                )}
+                                {modal.type === 'addTask' && (
+                                    <div className="space-y-4">
+                                        <h3 className="text-white font-black text-center mb-6 text-xl italic">إرسال مهمة</h3>
+                                        <textarea value={inputVal} onChange={e=>setInputVal(e.target.value)} className="w-full bg-black/50 p-5 rounded-2xl text-white border border-white/10 h-32 resize-none font-bold" placeholder="تفاصيل المهمة..."/>
+                                        <button onClick={addTask} className="w-full ab-gradient py-5 rounded-2xl font-black mt-4 uppercase italic">Execute Mission</button>
+                                    </div>
+                                )}
+                                {modal.type === 'deleteConfirm' && (
+                                    <div className="text-center py-4">
+                                        <h3 className="text-red-500 font-black text-xl mb-4">حذف العضو؟</h3>
+                                        <p className="text-white/40 text-sm mb-8">سيتم مسح كافة البيانات والمهمات المتعلقة بهذا العضو نهائياً من القاعدة</p>
+                                        <button onClick={()=>deleteStaff(modal.targetCode)} className="w-full bg-red-600 py-4 rounded-2xl font-black mb-3">تأكيد الحذف</button>
+                                    </div>
+                                )}
+                                {modal.type === 'error' && (
+                                    <div className="text-center py-6">
+                                        <div className="text-5xl mb-4 text-red-600">×</div>
+                                        <p className="font-black text-lg italic">الرمز غير معرف في القاعدة السحابية</p>
+                                    </div>
+                                )}
+                                <button onClick={closeModal} className="w-full text-white/20 py-4 font-black uppercase text-[10px] tracking-widest mt-2 hover:text-white transition-all">إغلاق النافذة</button>
                             </div>
                         </div>
                     )}
