@@ -3,218 +3,223 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AB OS | النظام السحابي المطلق</title>
+    <title>AB OS | النظام السحابي الموحد</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
-        body { font-family: 'Cairo', sans-serif; background-color: #020202; color: white; margin: 0; user-select: none; overflow-x: hidden; }
-        .glass { background: rgba(10, 10, 10, 0.9); backdrop-filter: blur(25px); border: 1px solid rgba(255,255,255,0.05); }
-        .ab-gradient { background: linear-gradient(135deg, #5865F2 0%, #3a44a7 100%); }
-        ::-webkit-scrollbar { display: none; }
-        .sync-pulse { animation: pulse 1.5s infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
-        .loading-bar { height: 2px; background: #5865F2; position: fixed; top: 0; left: 0; transition: width 0.3s; }
+        body { font-family: 'Cairo', sans-serif; background-color: #050505; color: white; margin: 0; user-select: none; overflow-x: hidden; }
+        .glass { background: rgba(10, 10, 10, 0.8); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.05); }
+        .ab-gradient { background: linear-gradient(135deg, #5865F2 0%, #2D3482 100%); }
+        .sync-pulse { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        ::-webkit-scrollbar { width: 0px; }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useCallback } = React;
+        const { useState, useEffect } = React;
 
-        // الرابط الخاص بك
-        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyR6j8p_T6jV8e_5m1p_T_k_L_S_Y_R_C_E_V/exec"; 
+        // رابط السكريبت الخاص بك بعد التحديث
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxvee9AcN0gfiLcE4C2m1wc1XJ9h8qXwmpTXdDk2PnEikh9IHHrAvM1swJLuKhgZ4SUpw/exec";
 
         function App() {
             const [view, setView] = useState('login');
             const [accessCode, setAccessCode] = useState('');
-            const [isAdmin, setIsAdmin] = useState(false);
             const [staff, setStaff] = useState({});
+            const [isAdmin, setIsAdmin] = useState(false);
             const [loading, setLoading] = useState(true);
             const [syncing, setSyncing] = useState(false);
-            const [modal, setModal] = useState({ type: null, targetCode: null });
-            const [form, setForm] = useState({ name: '', code: '', rank: '', taskText: '' });
+            const [modal, setModal] = useState({ type: null, id: null });
+            const [form, setForm] = useState({ name: '', code: '', rank: '', task: '' });
 
-            // دالة جلب البيانات مع "تجاوز الكاش" لضمان أحدث نسخة
-            const fetchData = useCallback(async (showLoading = true) => {
-                if (showLoading) setLoading(true);
+            // 1. جلب البيانات من السحابة (جوجل)
+            const fetchFromCloud = async () => {
+                setSyncing(true);
                 try {
-                    // إضافة timestamp للرابط لمنع المتصفح من تخزين النسخة القديمة
+                    // إضافة timestamp لمنع المتصفح من كاش قديم
                     const response = await fetch(`${SCRIPT_URL}?t=${Date.now()}`);
-                    const text = await response.text();
-                    const data = JSON.parse(text);
-                    setStaff(data);
-                    localStorage.setItem('ab_os_cloud_backup', text);
-                } catch (e) {
-                    console.error("Cloud fetch failed, using local backup");
-                    const saved = localStorage.getItem('ab_os_cloud_backup');
-                    if (saved) setStaff(JSON.parse(saved));
+                    const data = await response.json();
+                    if (data) {
+                        setStaff(data);
+                        localStorage.setItem('ab_backup', JSON.stringify(data));
+                    }
+                } catch (err) {
+                    console.error("Cloud Error:", err);
+                    const backup = localStorage.getItem('ab_backup');
+                    if (backup) setStaff(JSON.parse(backup));
                 } finally {
                     setLoading(false);
+                    setSyncing(false);
                 }
-            }, []);
+            };
 
-            useEffect(() => {
-                fetchData();
-            }, [fetchData]);
-
-            const syncToCloud = async (updatedData) => {
+            // 2. حفظ البيانات إلى السحابة (جوجل)
+            const saveToCloud = async (updatedData) => {
                 setStaff(updatedData);
                 setSyncing(true);
                 try {
                     await fetch(SCRIPT_URL, {
                         method: 'POST',
-                        mode: 'no-cors',
+                        mode: 'no-cors', // لضمان عدم الحظر من المتصفحات
+                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ action: "save", staff: updatedData })
                     });
-                    // حفظ نسخة محلية احتياطية فوراً
-                    localStorage.setItem('ab_os_cloud_backup', JSON.stringify(updatedData));
-                } catch (e) { console.error("Sync Error", e); }
-                
-                // تحديث البيانات مرة أخرى بعد ثانية للتأكد من وصولها للسحابة
-                setTimeout(() => {
-                    setSyncing(false);
-                    fetchData(false); 
-                }, 1500);
+                } catch (err) {
+                    console.error("Save Error:", err);
+                }
+                // إعادة الجلب للتأكد من المزامنة
+                setTimeout(fetchFromCloud, 1500);
             };
+
+            useEffect(() => {
+                fetchFromCloud();
+                // تحديث تلقائي كل دقيقة لضمان رؤية التعديلات من الأجهزة الأخرى
+                const interval = setInterval(fetchFromCloud, 60000);
+                return () => clearInterval(interval);
+            }, []);
 
             const handleLogin = () => {
                 const code = accessCode.trim();
-                // عند الدخول كأدمن، نقوم بعمل تحديث إجباري للبيانات
-                if (code === "777") { 
-                    fetchData(true).then(() => {
-                        setIsAdmin(true); 
-                        setView('dashboard'); 
-                    });
-                } else if (staff[code]) { 
-                    setIsAdmin(false); 
-                    setView('dashboard'); 
-                } else { 
-                    setModal({ type: 'error' }); 
+                if (code === "777") {
+                    setIsAdmin(true);
+                    setView('dashboard');
+                } else if (staff[code]) {
+                    setIsAdmin(false);
+                    setView('dashboard');
+                } else {
+                    alert("الكود غير صحيح أو غير مسجل في السحابة");
                 }
             };
 
-            const toggleTask = (code, taskId) => {
+            // العمليات الإدارية
+            const addEmployee = () => {
+                if (!form.name || !form.code) return;
+                const updated = { ...staff, [form.code]: { name: form.name, rank: form.rank || 'كادر', tasks: [], warnings: 0 } };
+                saveToCloud(updated);
+                setModal({ type: null });
+                setForm({ name: '', code: '', rank: '', task: '' });
+            };
+
+            const assignTask = () => {
+                if (!form.task) return;
+                const updated = { ...staff };
+                updated[modal.id].tasks.push({ id: Date.now(), text: form.task, done: false });
+                saveToCloud(updated);
+                setModal({ type: null });
+                setForm({ ...form, task: '' });
+            };
+
+            const toggleTask = (empId, taskId) => {
                 if (!isAdmin) return;
-                const updated = JSON.parse(JSON.stringify(staff)); // Deep copy
-                updated[code].tasks = updated[code].tasks.map(t => 
-                    t.id === taskId ? { ...t, done: !t.done } : t
-                );
-                syncToCloud(updated);
+                const updated = { ...staff };
+                updated[empId].tasks = updated[empId].tasks.map(t => t.id === taskId ? { ...t, done: !t.done } : t);
+                saveToCloud(updated);
             };
 
-            const deleteTask = (code, taskId) => {
-                const updated = JSON.parse(JSON.stringify(staff));
-                updated[code].tasks = updated[code].tasks.filter(t => t.id !== taskId);
-                syncToCloud(updated);
+            const updateWarnings = (empId, increment) => {
+                const updated = { ...staff };
+                const current = updated[empId].warnings || 0;
+                updated[empId].warnings = increment ? Math.min(current + 1, 3) : Math.max(current - 1, 0);
+                saveToCloud(updated);
             };
 
-            const updateWarning = (code, inc) => {
-                const updated = JSON.parse(JSON.stringify(staff));
-                const cur = updated[code].warnings || 0;
-                updated[code].warnings = inc ? Math.min(cur + 1, 3) : Math.max(cur - 1, 0);
-                syncToCloud(updated);
-            };
-
-            const confirmAction = () => {
-                const updated = JSON.parse(JSON.stringify(staff));
-                if (modal.type === 'addStaff' && form.name && form.code) {
-                    updated[form.code] = { name: form.name, rank: form.rank || 'إداري', tasks: [], warnings: 0 };
-                    syncToCloud(updated);
-                } else if (modal.type === 'addTask' && form.taskText) {
-                    const newT = { id: Date.now().toString(), text: form.taskText, done: false };
-                    updated[modal.targetCode].tasks = [...(updated[modal.targetCode].tasks || []), newT];
-                    syncToCloud(updated);
-                } else if (modal.type === 'deleteStaff') {
-                    delete updated[modal.targetCode];
-                    syncToCloud(updated);
-                }
-                closeModal();
-            };
-
-            const closeModal = () => { setModal({ type: null }); setForm({ name: '', code: '', rank: '', taskText: '' }); };
-            const calculateProgress = (tasks = []) => {
-                if (tasks.length === 0) return 0;
-                return Math.round((tasks.filter(t => t.done).length / tasks.length) * 100);
+            const deleteEmployee = (id) => {
+                const updated = { ...staff };
+                delete updated[id];
+                saveToCloud(updated);
             };
 
             if (loading) return (
-                <div className="min-h-screen bg-[#020202] flex flex-col items-center justify-center">
-                    <div className="text-5xl font-black italic text-[#5865F2] mb-4 animate-bounce">AB</div>
-                    <div className="text-[10px] font-black tracking-[0.5em] opacity-20 uppercase">Syncing Cloud Database...</div>
+                <div className="h-screen flex flex-col items-center justify-center bg-black">
+                    <div className="text-5xl font-black text-[#5865F2] italic mb-4 animate-bounce">AB</div>
+                    <div className="text-[10px] tracking-[0.5em] opacity-40 uppercase">Connecting to Cloud...</div>
                 </div>
             );
 
             if (view === 'login') return (
-                <div className="min-h-screen bg-[#020202] flex flex-col items-center justify-center p-6">
-                    <div className="glass p-12 rounded-[4rem] border border-white/5 w-full max-w-sm shadow-2xl text-center">
-                        <div className="text-8xl font-black text-[#5865F2] mb-2 italic">AB</div>
-                        <p className="text-white/20 text-[10px] mb-12 font-bold uppercase tracking-[0.6em]">Secure Cloud Access</p>
-                        <input type="password" placeholder="كود الدخول" className="w-full bg-black p-5 rounded-2xl text-center mb-6 border border-white/5 outline-none focus:border-[#5865F2] text-white font-bold" value={accessCode} onChange={e => setAccessCode(e.target.value)} />
-                        <button onClick={handleLogin} className="w-full ab-gradient text-white py-5 rounded-2xl font-black shadow-lg hover:brightness-110 active:scale-95 transition-all uppercase italic">Login</button>
+                <div className="h-screen flex items-center justify-center p-6">
+                    <div className="glass p-10 rounded-[3rem] w-full max-w-sm text-center shadow-2xl">
+                        <div className="text-7xl font-black text-[#5865F2] italic mb-2">AB</div>
+                        <div className="text-[10px] tracking-[0.4em] opacity-30 mb-10 font-bold uppercase">Cloud Management OS</div>
+                        <input 
+                            type="password" 
+                            placeholder="Access Code" 
+                            className="w-full bg-black/50 p-5 rounded-2xl text-center mb-4 border border-white/5 outline-none focus:border-[#5865F2] transition-all font-bold"
+                            value={accessCode}
+                            onChange={e => setAccessCode(e.target.value)}
+                        />
+                        <button onClick={handleLogin} className="w-full ab-gradient py-5 rounded-2xl font-black shadow-xl active:scale-95 transition-all italic">Enter System</button>
                     </div>
                 </div>
             );
 
-            const user = isAdmin ? { name: "المدير العام", rank: "FOUNDER" } : staff[accessCode];
+            const currentUser = isAdmin ? { name: "المدير العام", rank: "Founder" } : staff[accessCode];
 
             return (
-                <div className="min-h-screen bg-[#020202] text-white pb-24">
-                    <nav className="glass sticky top-0 z-[100] p-5 border-b border-white/5 flex justify-between items-center px-8">
+                <div className="min-h-screen pb-20">
+                    <header className="glass sticky top-0 z-50 p-5 px-8 flex justify-between items-center">
                         <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 ab-gradient rounded-xl flex items-center justify-center font-black italic shadow-lg">AB</div>
-                            <div className="text-right">
-                                <p className="font-black text-sm">{user?.name}</p>
-                                <p className="text-[9px] text-[#5865F2] font-black uppercase tracking-widest">{user?.rank}</p>
+                            <div className="w-10 h-10 ab-gradient rounded-xl flex items-center justify-center font-black italic">AB</div>
+                            <div>
+                                <h1 className="text-sm font-black">{currentUser?.name}</h1>
+                                <p className="text-[9px] text-[#5865F2] font-black uppercase tracking-tighter">{currentUser?.rank}</p>
                             </div>
                         </div>
-                        <div className="flex items-center gap-4">
-                            {syncing && <div className="text-[8px] text-green-500 font-black sync-pulse uppercase tracking-tighter">Uploading...</div>}
-                            <button onClick={() => fetchData(true)} className="p-2 opacity-20 hover:opacity-100 transition-opacity">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-                            </button>
-                            <button onClick={() => setView('login')} className="text-white/20 text-[10px] font-black uppercase border border-white/5 px-4 py-2 rounded-xl">Exit</button>
+                        <div className="flex items-center gap-3">
+                            {syncing && <div className="w-2 h-2 bg-green-500 rounded-full sync-pulse"></div>}
+                            <button onClick={() => setView('login')} className="text-[10px] opacity-20 font-black border border-white/10 px-3 py-1 rounded-lg">Exit</button>
                         </div>
-                    </nav>
+                    </header>
 
-                    <div className="max-w-2xl mx-auto p-6 pt-10 text-right">
+                    <main className="max-w-xl mx-auto p-6 mt-6">
                         {isAdmin ? (
                             <div className="space-y-6">
-                                <button onClick={() => setModal({ type: 'addStaff' })} className="w-full bg-white text-black py-6 rounded-[3rem] font-black text-sm shadow-xl active:scale-95 transition-all italic">إضافة كادر جديد +</button>
+                                <button onClick={() => setModal({ type: 'add' })} className="w-full bg-white text-black py-5 rounded-[2rem] font-black text-sm italic shadow-xl">إضافة كادر سحابي +</button>
+                                
                                 {Object.keys(staff).map(id => (
-                                    <div key={id} className="glass rounded-[3.5rem] border border-white/5 p-8 shadow-2xl relative overflow-hidden mb-6">
+                                    <div key={id} className="glass p-6 rounded-[2.5rem] border border-white/5 relative">
                                         <div className="flex justify-between items-start mb-6">
                                             <div className="flex items-center gap-4">
-                                                <div className="w-14 h-14 bg-black rounded-2xl flex items-center justify-center border border-white/5 text-[#5865F2] font-black italic text-2xl">{staff[id].name ? staff[id].name[0] : '?'}</div>
-                                                <div className="text-right">
-                                                    <h4 className="font-black text-lg leading-none mb-1">{staff[id].name}</h4>
-                                                    <p className="text-[10px] opacity-20 uppercase font-black tracking-widest">كود: {id} • {staff[id].rank}</p>
+                                                <div className="w-12 h-12 bg-black rounded-xl border border-white/5 flex items-center justify-center font-black text-[#5865F2] italic text-xl">{staff[id].name[0]}</div>
+                                                <div>
+                                                    <h3 className="font-black text-lg">{staff[id].name}</h3>
+                                                    <p className="text-[9px] opacity-20 font-black uppercase">ID: {id} • {staff[id].rank}</p>
                                                 </div>
                                             </div>
-                                            <button onClick={() => setModal({ type: 'deleteStaff', targetCode: id })} className="text-white/10 text-xl hover:text-red-500 transition-colors">×</button>
+                                            <button onClick={() => deleteEmployee(id)} className="opacity-10 hover:opacity-100 text-red-500 font-bold">×</button>
                                         </div>
-                                        <div className="grid grid-cols-2 gap-4 mb-8">
-                                            <div className="bg-black/40 p-4 rounded-3xl border border-white/5">
-                                                <div className="flex justify-between text-[9px] uppercase font-black opacity-30 mb-3"><span>التحذيرات</span><div className="flex gap-2"><button onClick={()=>updateWarning(id, true)} className="text-red-500">+</button><button onClick={()=>updateWarning(id, false)} className="text-white">-</button></div></div>
-                                                <div className="flex gap-1">{[1,2,3].map(i=>(<div key={i} className={`h-2 flex-1 rounded-full ${staff[id].warnings>=i?'bg-red-600 shadow-[0_0_10px_red]':'bg-white/5'}`}></div>))}</div>
-                                            </div>
-                                            <div className="bg-black/40 p-4 rounded-3xl border border-white/5">
-                                                <div className="flex justify-between text-[9px] uppercase font-black opacity-30 mb-1"><span>الإنجاز</span><span>{calculateProgress(staff[id].tasks)}%</span></div>
-                                                <div className="h-2 bg-black rounded-full overflow-hidden mt-3"><div className="h-full ab-gradient transition-all duration-1000" style={{width:`${calculateProgress(staff[id].tasks)}%`}}></div></div>
-                                            </div>
-                                        </div>
-                                        <button onClick={()=>setModal({type:'addTask', targetCode:id})} className="w-full ab-gradient py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.3em] mb-4 shadow-lg active:scale-95 transition-all">إرسال مهمة جديدة</button>
-                                        <div className="space-y-2">
-                                            {staff[id].tasks?.map(t=>(
-                                                <div key={t.id} className={`flex items-center justify-between p-4 rounded-2xl border border-white/5 transition-all ${t.done?'opacity-20 bg-green-500/5':'bg-black/50'}`}>
-                                                    <div className="flex items-center gap-4 flex-1 cursor-pointer" onClick={()=>toggleTask(id, t.id)}>
-                                                        <div className={`w-4 h-4 rounded-full border-2 ${t.done?'bg-green-500 border-green-500':'border-white/10'}`}></div>
-                                                        <span className={`text-[12px] font-black ${t.done?'line-through':''}`}>{t.text}</span>
+
+                                        <div className="grid grid-cols-2 gap-4 mb-6">
+                                            <div className="bg-black/40 p-4 rounded-2xl border border-white/5">
+                                                <div className="flex justify-between text-[9px] font-black opacity-30 mb-2 uppercase">
+                                                    <span>Warnings</span>
+                                                    <div className="flex gap-2">
+                                                        <button onClick={() => updateWarnings(id, true)} className="text-red-500">+</button>
+                                                        <button onClick={() => updateWarnings(id, false)} className="text-white">-</button>
                                                     </div>
-                                                    <button onClick={()=>deleteTask(id, t.id)} className="text-[10px] font-black text-red-500/30 hover:text-red-500 px-2">حذف</button>
+                                                </div>
+                                                <div className="flex gap-1.5">
+                                                    {[1,2,3].map(i => <div key={i} className={`h-1.5 flex-1 rounded-full ${staff[id].warnings >= i ? 'bg-red-600 shadow-[0_0_8px_red]' : 'bg-white/5'}`}></div>)}
+                                                </div>
+                                            </div>
+                                            <div className="bg-black/40 p-4 rounded-2xl border border-white/5 text-center">
+                                                <p className="text-[9px] font-black opacity-30 uppercase">Progress</p>
+                                                <p className="text-xl font-black italic">{staff[id].tasks.filter(t=>t.done).length}/{staff[id].tasks.length}</p>
+                                            </div>
+                                        </div>
+
+                                        <button onClick={() => setModal({ type: 'task', id })} className="w-full bg-[#5865F2]/10 text-[#5865F2] py-3 rounded-xl font-black text-[10px] uppercase tracking-widest mb-4 border border-[#5865F2]/20">إرسال مهمة</button>
+
+                                        <div className="space-y-2">
+                                            {staff[id].tasks.map(t => (
+                                                <div key={t.id} onClick={() => toggleTask(id, t.id)} className={`p-4 rounded-xl border border-white/5 flex items-center gap-3 cursor-pointer transition-all ${t.done ? 'opacity-20' : 'bg-black/20'}`}>
+                                                    <div className={`w-3 h-3 rounded-full ${t.done ? 'bg-green-500' : 'border border-white/20'}`}></div>
+                                                    <span className={`text-xs font-bold ${t.done ? 'line-through' : ''}`}>{t.text}</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -222,25 +227,30 @@
                                 ))}
                             </div>
                         ) : (
-                            <div className="space-y-8">
-                                <div className="glass p-12 rounded-[4rem] text-center shadow-2xl relative overflow-hidden">
-                                    <div className="w-32 h-32 bg-black rounded-[3rem] border border-white/5 flex items-center justify-center mx-auto mb-6 text-[#5865F2] font-black text-6xl italic">{user?.name ? user.name[0] : '?'}</div>
-                                    <h2 className="text-4xl font-black italic tracking-tighter">{user?.name}</h2>
-                                    <p className="text-[10px] text-[#5865F2] font-black uppercase mb-10 tracking-[0.5em]">{user?.rank}</p>
-                                    <div className="grid grid-cols-2 gap-5 text-right">
-                                        <div className="bg-black/60 p-8 rounded-[2.5rem] border border-white/5"><p className="text-[10px] opacity-20 uppercase font-black mb-4 tracking-widest">Warnings</p><div className="flex gap-2">{[1,2,3].map(i=>(<div key={i} className={`h-2.5 flex-1 rounded-full ${user.warnings>=i?'bg-red-600 shadow-[0_0_15px_red]':'bg-white/5'}`}></div>))}</div></div>
-                                        <div className="bg-black/60 p-8 rounded-[2.5rem] border border-white/5"><p className="text-[10px] opacity-20 uppercase font-black mb-1 tracking-widest">Efficiency</p><p className="text-3xl font-black italic">{calculateProgress(user?.tasks)}%</p></div>
+                            <div className="space-y-6 animate-in slide-in-from-bottom-4">
+                                <div className="glass p-10 rounded-[3.5rem] text-center">
+                                    <div className="w-24 h-24 bg-black border border-white/5 rounded-[2rem] flex items-center justify-center mx-auto mb-6 text-4xl font-black text-[#5865F2] italic">{currentUser.name[0]}</div>
+                                    <h2 className="text-3xl font-black italic">{currentUser.name}</h2>
+                                    <p className="text-[10px] text-[#5865F2] font-black uppercase tracking-[0.4em] mb-8">{currentUser.rank}</p>
+                                    
+                                    <div className="bg-black/40 p-6 rounded-3xl border border-white/5 text-right">
+                                        <p className="text-[10px] font-black opacity-20 uppercase mb-3">Warnings Status</p>
+                                        <div className="flex gap-2">
+                                            {[1,2,3].map(i => <div key={i} className={`h-3 flex-1 rounded-full ${currentUser.warnings >= i ? 'bg-red-600 shadow-[0_0_10px_red]' : 'bg-white/5'}`}></div>)}
+                                        </div>
                                     </div>
                                 </div>
-                                <div className="glass p-10 rounded-[3.5rem] border border-white/5">
-                                    <p className="text-[10px] font-black uppercase opacity-20 mb-8 tracking-[0.4em]">Active Missions</p>
+
+                                <div className="glass p-8 rounded-[3rem]">
+                                    <h3 className="text-[10px] font-black opacity-20 uppercase mb-6 tracking-widest">Active Missions</h3>
                                     <div className="space-y-4">
-                                        {user?.tasks?.map(t=>(
-                                            <div key={t.id} className={`p-8 rounded-[2.5rem] border flex items-center gap-6 ${t.done?'bg-green-500/5 border-green-500/10 opacity-30':'bg-black/40 border-white/5 shadow-xl'}`}>
-                                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl font-black ${t.done?'bg-green-500 text-white':'bg-black border border-white/10 text-white/20'}`}>{t.done?'✓':'!'}</div>
-                                                <div className="text-right flex-1">
-                                                    <p className={`font-black text-lg leading-tight ${t.done?'line-through':''}`}>{t.text}</p>
-                                                    <p className="text-[9px] opacity-10 uppercase mt-1 font-black">{t.done?'Task Completed':'Mission Active'}</p>
+                                        {currentUser.tasks.length === 0 && <p className="text-center opacity-10 py-10 font-black italic">لا يوجد مهام حالياً</p>}
+                                        {currentUser.tasks.map(t => (
+                                            <div key={t.id} className={`p-6 rounded-2xl border flex items-center gap-5 ${t.done ? 'bg-green-500/5 border-green-500/20 opacity-30' : 'bg-black/40 border-white/5 shadow-xl'}`}>
+                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black ${t.done ? 'bg-green-500' : 'bg-black border border-white/10 text-white/10'}`}>{t.done ? '✓' : '!'}</div>
+                                                <div className="text-right">
+                                                    <p className={`font-black text-sm ${t.done ? 'line-through' : ''}`}>{t.text}</p>
+                                                    <p className="text-[8px] font-black opacity-20 uppercase mt-1">{t.done ? 'Completed' : 'Awaiting'}</p>
                                                 </div>
                                             </div>
                                         ))}
@@ -248,19 +258,27 @@
                                 </div>
                             </div>
                         )}
-                    </div>
+                    </main>
 
                     {modal.type && (
-                        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6 bg-black/95 backdrop-blur-xl">
-                            <div className="glass w-full max-w-sm p-12 rounded-[4rem] border border-white/10 text-right">
-                                {modal.type === 'addStaff' && <div className="space-y-5"><h3 className="text-white font-black text-center mb-8 text-xl italic">إضافة كادر</h3><input value={form.name} onChange={e=>setForm({...form, name: e.target.value})} className="w-full bg-black p-5 rounded-2xl text-white text-right border border-white/5 font-bold" placeholder="الاسم"/><input value={form.code} onChange={e=>setForm({...form, code: e.target.value})} className="w-full bg-black p-5 rounded-2xl text-white text-right border border-white/5 font-bold" placeholder="كود الدخول"/><input value={form.rank} onChange={e=>setForm({...form, rank: e.target.value})} className="w-full bg-black p-5 rounded-2xl text-white text-right border border-white/5 font-bold" placeholder="الرتبة"/></div>}
-                                {modal.type === 'addTask' && <div className="space-y-4"><h3 className="text-white font-black text-center mb-8 text-xl italic">تفاصيل المهمة</h3><textarea value={form.taskText} onChange={e=>setForm({...form, taskText: e.target.value})} className="w-full bg-black p-6 rounded-3xl text-white text-right border border-white/5 h-40 resize-none font-bold" placeholder="اكتب البروتوكول هنا..."/></div>}
-                                {modal.type === 'deleteStaff' && <div className="text-center py-6"><h3 className="text-red-500 font-black text-xl mb-4 italic">حذف الكادر؟</h3><p className="text-xs opacity-40 mb-6 font-bold uppercase tracking-widest text-center">سيتم حذف الموظف من السحابة</p></div>}
-                                {modal.type === 'error' && <div className="text-center py-10"><div className="text-6xl mb-6 text-red-600">×</div><p className="font-black text-xl italic">الكود غير معترف به</p></div>}
-                                <div className="flex flex-col gap-3 mt-10">
-                                    {modal.type !== 'error' && <button onClick={confirmAction} className="ab-gradient text-white py-5 rounded-2xl font-black shadow-lg italic">EXECUTE</button>}
-                                    <button onClick={closeModal} className="text-white/20 py-4 font-black uppercase text-[10px] text-center">Close System</button>
-                                </div>
+                        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6">
+                            <div className="glass w-full max-w-sm p-10 rounded-[3.5rem] border border-white/10">
+                                {modal.type === 'add' ? (
+                                    <div className="space-y-4">
+                                        <h2 className="text-center font-black italic mb-6">إضافة كادر جديد</h2>
+                                        <input placeholder="الاسم" className="w-full bg-black p-5 rounded-2xl text-right border border-white/5 font-bold" onChange={e=>setForm({...form, name: e.target.value})}/>
+                                        <input placeholder="كود الدخول" className="w-full bg-black p-5 rounded-2xl text-right border border-white/5 font-bold" onChange={e=>setForm({...form, code: e.target.value})}/>
+                                        <input placeholder="الرتبة" className="w-full bg-black p-5 rounded-2xl text-right border border-white/5 font-bold" onChange={e=>setForm({...form, rank: e.target.value})}/>
+                                        <button onClick={addEmployee} className="w-full ab-gradient py-5 rounded-2xl font-black mt-4 italic">حفظ في السحابة</button>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-4">
+                                        <h2 className="text-center font-black italic mb-6">إسناد مهمة جديدة</h2>
+                                        <textarea placeholder="تفاصيل المهمة..." className="w-full bg-black p-6 rounded-2xl text-right border border-white/5 font-bold h-32 resize-none" onChange={e=>setForm({...form, task: e.target.value})}/>
+                                        <button onClick={assignTask} className="w-full ab-gradient py-5 rounded-2xl font-black mt-4 italic">إرسال الآن</button>
+                                    </div>
+                                )}
+                                <button onClick={() => setModal({ type: null })} className="w-full text-[10px] font-black opacity-20 mt-4 uppercase">Close</button>
                             </div>
                         </div>
                     )}
