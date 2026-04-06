@@ -3,144 +3,245 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AB OS | نظام الإدارة السحابي</title>
-    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap" rel="stylesheet">
+    <title>AB OS | الإدارة السحابية</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
-        :root { --p: #00ff88; --bg: #0a0a0a; --card: #151515; }
-        * { box-sizing: border-box; font-family: 'Tajawal', sans-serif; }
-        body { background: var(--bg); color: white; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; overflow-x: hidden; }
-        .container { background: var(--card); padding: 30px; border-radius: 20px; box-shadow: 0 0 30px rgba(0,255,136,0.1); width: 90%; max-width: 500px; text-align: center; border: 1px solid #333; }
-        input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 10px; border: 1px solid #333; background: #222; color: white; font-size: 16px; outline: none; text-align: center; }
-        button { width: 100%; padding: 12px; border-radius: 10px; border: none; background: var(--p); color: black; font-weight: bold; cursor: pointer; transition: 0.3s; font-size: 16px; margin-top: 10px; }
-        button:hover { opacity: 0.8; transform: scale(1.02); }
-        .member-card { background: #222; padding: 15px; border-radius: 10px; margin-top: 10px; border-right: 4px solid var(--p); text-align: right; position: relative; }
-        .warning-count { color: #ff4444; font-weight: bold; }
-        .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 1000; }
-        .loader { border: 4px solid #f3f3f3; border-top: 4px solid var(--p); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        body { font-family: 'Cairo', sans-serif; background-color: #020202; color: white; margin: 0; user-select: none; overflow-x: hidden; }
+        .glass { background: rgba(10, 10, 10, 0.85); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.05); }
+        .ab-gradient { background: linear-gradient(135deg, #5865F2 0%, #3a44a7 100%); }
+        ::-webkit-scrollbar { display: none; }
+        .sync-pulse { animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
+        .card-enter { animation: slideUp 0.5s ease-out; }
+        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
     </style>
 </head>
 <body>
+    <div id="root"></div>
 
-<div id="loading" class="loading-overlay"><div class="loader"></div></div>
+    <script type="text/babel">
+        const { useState, useEffect } = React;
 
-<div class="container" id="app">
-    <h2 id="title">نظام AB OS السحابي</h2>
-    <div id="login-zone">
-        <input type="password" id="passInput" placeholder="أدخل كود الدخول">
-        <button onclick="login()">دخول</button>
-    </div>
+        // ملاحظة: الرابط أدناه هو الرابط الافتراضي الذي استخرجته أنت من Google Apps Script
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyR6j8p_T6jV8e_5m1p_T_k_L_S_Y_R_C_E_V/exec"; 
 
-    <div id="main-zone" style="display:none;">
-        <div id="admin-controls" style="display:none;">
-            <h3>لوحة المدير</h3>
-            <input type="text" id="newName" placeholder="اسم العضو">
-            <input type="text" id="newRole" placeholder="الرتبة">
-            <input type="text" id="newCode" placeholder="كود العضو الخاص">
-            <button onclick="addMember()">إضافة عضو جديد</button>
-            <hr style="border:0.5px solid #333; margin:20px 0;">
-        </div>
-        <div id="members-list"></div>
-        <button onclick="location.reload()" style="background:#444; color:white;">تسجيل خروج</button>
-    </div>
-</div>
+        function App() {
+            const [view, setView] = useState('login');
+            const [accessCode, setAccessCode] = useState('');
+            const [isAdmin, setIsAdmin] = useState(false);
+            const [staff, setStaff] = useState({});
+            const [loading, setLoading] = useState(true);
+            const [syncing, setSyncing] = useState(false);
+            const [modal, setModal] = useState({ type: null, targetCode: null });
+            const [form, setForm] = useState({ name: '', code: '', rank: '', taskText: '' });
 
-<script>
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzVJB2OkxbZgfls2wYSAGoYeWLv1gtho5cg7AXIdG4yMbZqud6UbtOKZvAfcxpCDCT4iQ/exec";
-    let currentUser = null;
-    let allData = [];
+            const fetchData = async () => {
+                if (!SCRIPT_URL || SCRIPT_URL.includes("macros")) {
+                    try {
+                        const response = await fetch(SCRIPT_URL);
+                        const data = await response.json();
+                        setStaff(data);
+                        localStorage.setItem('ab_os_local', JSON.stringify(data));
+                    } catch (e) {
+                        const saved = localStorage.getItem('ab_os_local');
+                        if (saved) setStaff(JSON.parse(saved));
+                    }
+                }
+                setLoading(false);
+            };
 
-    async function loadData() {
-        showLoading(true);
-        try {
-            const res = await fetch(SCRIPT_URL);
-            allData = await res.json();
-            renderMembers();
-        } catch (e) { console.error("Error loading", e); }
-        showLoading(false);
-    }
+            useEffect(() => { fetchData(); }, []);
 
-    function renderMembers() {
-        const list = document.getElementById('members-list');
-        list.innerHTML = "";
-        allData.forEach((m, index) => {
-            if (currentUser === 'admin' || m.code === document.getElementById('passInput').value) {
-                const div = document.createElement('div');
-                div.className = 'member-card';
-                div.innerHTML = `
-                    <strong>${m.name}</strong> (${m.role})<br>
-                    المهام: ${m.tasks || 'لا يوجد'}<br>
-                    التحذيرات: <span class="warning-count">${m.warnings || 0}</span>
-                    ${currentUser === 'admin' ? `
-                        <div style="margin-top:10px;">
-                            <button onclick="updateMember(${index}, 'warning')" style="width:auto; padding:5px 10px; background:#ff4444;">+ تحذير</button>
-                            <button onclick="editTasks(${index})" style="width:auto; padding:5px 10px; background:#444;">تعديل المهام</button>
+            const syncToCloud = async (updatedData) => {
+                setStaff(updatedData);
+                localStorage.setItem('ab_os_local', JSON.stringify(updatedData));
+                setSyncing(true);
+                try {
+                    await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        body: JSON.stringify({ action: "save", staff: updatedData })
+                    });
+                } catch (e) { console.error("Sync Error", e); }
+                setTimeout(() => setSyncing(false), 800);
+            };
+
+            const handleLogin = () => {
+                const code = accessCode.trim();
+                if (code === "777") { setIsAdmin(true); setView('dashboard'); }
+                else if (staff[code]) { setIsAdmin(false); setView('dashboard'); }
+                else { setModal({ type: 'error' }); }
+            };
+
+            const toggleTask = (code, taskId) => {
+                if (!isAdmin) return;
+                const updated = {...staff};
+                updated[code].tasks = updated[code].tasks.map(t => 
+                    t.id === taskId ? { ...t, done: !t.done } : t
+                );
+                syncToCloud(updated);
+            };
+
+            const deleteTask = (code, taskId) => {
+                const updated = {...staff};
+                updated[code].tasks = updated[code].tasks.filter(t => t.id !== taskId);
+                syncToCloud(updated);
+            };
+
+            const updateWarning = (code, inc) => {
+                const updated = {...staff};
+                const cur = updated[code].warnings || 0;
+                updated[code].warnings = inc ? Math.min(cur + 1, 3) : Math.max(cur - 1, 0);
+                syncToCloud(updated);
+            };
+
+            const confirmAction = () => {
+                const updated = {...staff};
+                if (modal.type === 'addStaff' && form.name && form.code) {
+                    updated[form.code] = { name: form.name, rank: form.rank || 'كادر إداري', tasks: [], warnings: 0 };
+                    syncToCloud(updated);
+                } else if (modal.type === 'addTask' && form.taskText) {
+                    const newT = { id: Date.now().toString(), text: form.taskText, done: false };
+                    updated[modal.targetCode].tasks = [...(updated[modal.targetCode].tasks || []), newT];
+                    syncToCloud(updated);
+                } else if (modal.type === 'deleteStaff') {
+                    delete updated[modal.targetCode];
+                    syncToCloud(updated);
+                }
+                closeModal();
+            };
+
+            const closeModal = () => { setModal({ type: null }); setForm({ name: '', code: '', rank: '', taskText: '' }); };
+            const calculateProgress = (tasks = []) => {
+                if (tasks.length === 0) return 0;
+                return Math.round((tasks.filter(t => t.done).length / tasks.length) * 100);
+            };
+
+            if (loading) return <div className="min-h-screen bg-[#020202] flex items-center justify-center font-black italic text-[#5865F2] animate-pulse">AB OS CONNECTING...</div>;
+
+            if (view === 'login') return (
+                <div className="min-h-screen bg-[#020202] flex flex-col items-center justify-center p-6">
+                    <div className="glass p-12 rounded-[4rem] border border-white/5 w-full max-w-sm shadow-2xl text-center">
+                        <div className="text-8xl font-black text-[#5865F2] mb-4 italic">AB</div>
+                        <p className="text-white/20 text-[10px] mb-12 font-bold uppercase tracking-[0.6em]">Integrated Cloud OS</p>
+                        <input type="password" placeholder="كود الدخول" className="w-full bg-black p-5 rounded-2xl text-center mb-6 border border-white/5 outline-none focus:border-[#5865F2] text-white font-bold" value={accessCode} onChange={e => setAccessCode(e.target.value)} />
+                        <button onClick={handleLogin} className="w-full ab-gradient text-white py-5 rounded-2xl font-black shadow-lg active:scale-95 transition-all uppercase italic">Login System</button>
+                    </div>
+                </div>
+            );
+
+            const user = isAdmin ? { name: "المدير العام", rank: "FOUNDER" } : staff[accessCode];
+
+            return (
+                <div className="min-h-screen bg-[#020202] text-white pb-24">
+                    <nav className="bg-black/60 backdrop-blur-2xl p-5 border-b border-white/5 flex justify-between items-center px-8 sticky top-0 z-[100]">
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 ab-gradient rounded-xl flex items-center justify-center font-black italic shadow-lg">AB</div>
+                            <div className="text-right">
+                                <p className="font-black text-sm">{user?.name}</p>
+                                <p className="text-[9px] text-[#5865F2] font-black uppercase">{user?.rank}</p>
+                            </div>
                         </div>
-                    ` : ''}
-                `;
-                list.appendChild(div);
-            }
-        });
-    }
+                        <div className="flex items-center gap-3">
+                            {syncing && <span className="text-[8px] text-green-500 font-black sync-pulse tracking-widest">SYNCING...</span>}
+                            <button onClick={() => setView('login')} className="text-white/20 text-[10px] font-black uppercase border border-white/5 px-4 py-2 rounded-xl">Exit</button>
+                        </div>
+                    </nav>
 
-    async function login() {
-        const code = document.getElementById('passInput').value;
-        if (code === "777") {
-            currentUser = 'admin';
-            document.getElementById('admin-controls').style.display = 'block';
-        } else {
-            await loadData();
-            const user = allData.find(u => u.code === code);
-            if (user) { currentUser = 'user'; } 
-            else { alert("الكود خطأ!"); return; }
+                    <div className="max-w-2xl mx-auto p-6 pt-10 text-right">
+                        {isAdmin ? (
+                            <div className="space-y-6">
+                                <button onClick={() => setModal({ type: 'addStaff' })} className="w-full bg-white text-black py-6 rounded-[3rem] font-black text-sm shadow-xl active:scale-95 transition-all italic tracking-tighter">إضافة كادر جديد +</button>
+                                {Object.keys(staff).map(id => (
+                                    <div key={id} className="glass rounded-[3.5rem] border border-white/5 p-8 shadow-2xl card-enter">
+                                        <div className="flex justify-between items-start mb-6">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-14 h-14 bg-black rounded-2xl flex items-center justify-center border border-white/5 text-[#5865F2] font-black italic text-2xl">{staff[id].name[0]}</div>
+                                                <div className="text-right">
+                                                    <h4 className="font-black text-lg leading-none mb-1">{staff[id].name}</h4>
+                                                    <p className="text-[10px] opacity-20 uppercase font-black">كود: {id} • {staff[id].rank}</p>
+                                                </div>
+                                            </div>
+                                            <button onClick={() => setModal({ type: 'deleteStaff', targetCode: id })} className="text-white/10 text-xl hover:text-red-500 transition-colors">×</button>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4 mb-8">
+                                            <div className="bg-black/40 p-4 rounded-3xl border border-white/5">
+                                                <div className="flex justify-between text-[9px] uppercase font-black opacity-30 mb-3"><span>التحذيرات</span><div className="flex gap-2"><button onClick={()=>updateWarning(id, true)} className="text-red-500">+</button><button onClick={()=>updateWarning(id, false)} className="text-white">-</button></div></div>
+                                                <div className="flex gap-1">{[1,2,3].map(i=>(<div key={i} className={`h-2 flex-1 rounded-full ${staff[id].warnings>=i?'bg-red-600 shadow-[0_0_10px_red]':'bg-white/5'}`}></div>))}</div>
+                                            </div>
+                                            <div className="bg-black/40 p-4 rounded-3xl border border-white/5">
+                                                <div className="flex justify-between text-[9px] uppercase font-black opacity-30 mb-1"><span>الإنجاز</span><span>{calculateProgress(staff[id].tasks)}%</span></div>
+                                                <div className="h-2 bg-black rounded-full overflow-hidden mt-3"><div className="h-full ab-gradient transition-all duration-1000" style={{width:`${calculateProgress(staff[id].tasks)}%`}}></div></div>
+                                            </div>
+                                        </div>
+                                        <button onClick={()=>setModal({type:'addTask', targetCode:id})} className="w-full ab-gradient py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.3em] mb-4 shadow-lg active:scale-95 transition-all">إرسال مهمة جديدة</button>
+                                        <div className="space-y-2">
+                                            {staff[id].tasks?.map(t=>(
+                                                <div key={t.id} className={`flex items-center justify-between p-4 rounded-2xl border border-white/5 transition-all ${t.done?'opacity-20 bg-green-500/5':'bg-black/50'}`}>
+                                                    <div className="flex items-center gap-4 flex-1 cursor-pointer" onClick={()=>toggleTask(id, t.id)}>
+                                                        <div className={`w-4 h-4 rounded-full border-2 ${t.done?'bg-green-500 border-green-500':'border-white/10'}`}></div>
+                                                        <span className={`text-[12px] font-black ${t.done?'line-through':''}`}>{t.text}</span>
+                                                    </div>
+                                                    <button onClick={()=>deleteTask(id, t.id)} className="text-[10px] font-black text-red-500/30 hover:text-red-500 px-2">حذف</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="space-y-8 card-enter">
+                                <div className="glass p-12 rounded-[4rem] text-center shadow-2xl relative overflow-hidden">
+                                    <div className="w-32 h-32 bg-black rounded-[3rem] border border-white/5 flex items-center justify-center mx-auto mb-6 text-[#5865F2] font-black text-6xl italic">{user?.name[0]}</div>
+                                    <h2 className="text-4xl font-black italic tracking-tighter">{user?.name}</h2>
+                                    <p className="text-[10px] text-[#5865F2] font-black uppercase mb-10 tracking-[0.5em]">{user?.rank}</p>
+                                    <div className="grid grid-cols-2 gap-5 text-right">
+                                        <div className="bg-black/60 p-8 rounded-[2.5rem] border border-white/5"><p className="text-[10px] opacity-20 uppercase font-black mb-4 tracking-widest">Warnings</p><div className="flex gap-2">{[1,2,3].map(i=>(<div key={i} className={`h-2.5 flex-1 rounded-full ${user.warnings>=i?'bg-red-600 shadow-[0_0_15px_red]':'bg-white/5'}`}></div>))}</div></div>
+                                        <div className="bg-black/60 p-8 rounded-[2.5rem] border border-white/5"><p className="text-[10px] opacity-20 uppercase font-black mb-1 tracking-widest">Efficiency</p><p className="text-3xl font-black italic">{calculateProgress(user?.tasks)}%</p></div>
+                                    </div>
+                                </div>
+                                <div className="glass p-10 rounded-[3.5rem] border border-white/5">
+                                    <p className="text-[10px] font-black uppercase opacity-20 mb-8 tracking-[0.4em]">Active Missions</p>
+                                    <div className="space-y-4">
+                                        {user?.tasks?.map(t=>(
+                                            <div key={t.id} className={`p-8 rounded-[2.5rem] border flex items-center gap-6 ${t.done?'bg-green-500/5 border-green-500/10 opacity-30':'bg-black/40 border-white/5 shadow-xl'}`}>
+                                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl font-black ${t.done?'bg-green-500 text-white':'bg-black border border-white/10 text-white/20'}`}>{t.done?'✓':'!'}</div>
+                                                <div className="text-right flex-1">
+                                                    <p className={`font-black text-lg leading-tight ${t.done?'line-through':''}`}>{t.text}</p>
+                                                    <p className="text-[9px] opacity-10 uppercase mt-1 font-black">{t.done?'Task Completed':'Mission Active'}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {modal.type && (
+                        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6 bg-black/95 backdrop-blur-xl">
+                            <div className="glass w-full max-w-sm p-12 rounded-[4rem] border border-white/10 text-right">
+                                {modal.type === 'addStaff' && <div className="space-y-5"><h3 className="text-white font-black text-center mb-8 text-xl italic">إضافة كادر</h3><input value={form.name} onChange={e=>setForm({...form, name: e.target.value})} className="w-full bg-black p-5 rounded-2xl text-white text-right border border-white/5 font-bold" placeholder="الاسم"/><input value={form.code} onChange={e=>setForm({...form, code: e.target.value})} className="w-full bg-black p-5 rounded-2xl text-white text-right border border-white/5 font-bold" placeholder="الكود"/><input value={form.rank} onChange={e=>setForm({...form, rank: e.target.value})} className="w-full bg-black p-5 rounded-2xl text-white text-right border border-white/5 font-bold" placeholder="الرتبة"/></div>}
+                                {modal.type === 'addTask' && <div className="space-y-4"><h3 className="text-white font-black text-center mb-8 text-xl italic">تفاصيل المهمة</h3><textarea value={form.taskText} onChange={e=>setForm({...form, taskText: e.target.value})} className="w-full bg-black p-6 rounded-3xl text-white text-right border border-white/5 h-40 resize-none font-bold" placeholder="اكتب البروتوكول هنا..."/></div>}
+                                {modal.type === 'deleteStaff' && <div className="text-center py-6"><h3 className="text-red-500 font-black text-xl mb-4 italic">حذف الكادر؟</h3><p className="text-xs opacity-40 mb-6 font-bold uppercase tracking-widest text-center">سيتم حذف الموظف من السحابة</p></div>}
+                                {modal.type === 'error' && <div className="text-center py-10"><div className="text-6xl mb-6 text-red-600">×</div><p className="font-black text-xl italic">الكود غير صحيح</p></div>}
+                                <div className="flex flex-col gap-3 mt-10">
+                                    {modal.type !== 'error' && <button onClick={confirmAction} className="ab-gradient text-white py-5 rounded-2xl font-black shadow-lg italic">EXECUTE</button>}
+                                    <button onClick={closeModal} className="text-white/20 py-4 font-black uppercase text-[10px] text-center">Close System</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
         }
-        document.getElementById('login-zone').style.display = 'none';
-        document.getElementById('main-zone').style.display = 'block';
-        if(currentUser === 'admin') loadData();
-    }
 
-    async function addMember() {
-        const name = document.getElementById('newName').value;
-        const role = document.getElementById('newRole').value;
-        const code = document.getElementById('newCode').value;
-        if(!name || !code) return alert("اكمل البيانات");
-
-        showLoading(true);
-        await fetch(SCRIPT_URL, {
-            method: "POST",
-            body: JSON.stringify({ action: "add", name, role, code })
-        });
-        document.getElementById('newName').value = "";
-        document.getElementById('newRole').value = "";
-        document.getElementById('newCode').value = "";
-        await loadData();
-    }
-
-    async function updateMember(index, type) {
-        showLoading(true);
-        const member = allData[index];
-        await fetch(SCRIPT_URL, {
-            method: "POST",
-            body: JSON.stringify({ action: "update", name: member.name, type: type })
-        });
-        await loadData();
-    }
-
-    async function editTasks(index) {
-        const newTask = prompt("أدخل المهام الجديدة:");
-        if (newTask === null) return;
-        showLoading(true);
-        await fetch(SCRIPT_URL, {
-            method: "POST",
-            body: JSON.stringify({ action: "update", name: allData[index].name, type: 'tasks', value: newTask })
-        });
-        await loadData();
-    }
-
-    function showLoading(show) {
-        document.getElementById('loading').style.display = show ? 'flex' : 'none';
-    }
-</script>
-
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
 </body>
 </html>
