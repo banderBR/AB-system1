@@ -3,327 +3,144 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AB OS | الإدارة السحابية</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <!-- Firebase SDKs (Compatibility Version) -->
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-
+    <title>AB OS | نظام الإدارة السحابي</title>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Cairo', sans-serif; background-color: #020202; color: white; margin: 0; overflow-x: hidden; }
-        .glass { background: rgba(15, 15, 15, 0.8); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.05); }
-        .ab-gradient { background: linear-gradient(135deg, #5865F2 0%, #3a44a7 100%); }
-        ::-webkit-scrollbar { display: none; }
-        .animate-pulse-slow { animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+        :root { --p: #00ff88; --bg: #0a0a0a; --card: #151515; }
+        * { box-sizing: border-box; font-family: 'Tajawal', sans-serif; }
+        body { background: var(--bg); color: white; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; overflow-x: hidden; }
+        .container { background: var(--card); padding: 30px; border-radius: 20px; box-shadow: 0 0 30px rgba(0,255,136,0.1); width: 90%; max-width: 500px; text-align: center; border: 1px solid #333; }
+        input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 10px; border: 1px solid #333; background: #222; color: white; font-size: 16px; outline: none; text-align: center; }
+        button { width: 100%; padding: 12px; border-radius: 10px; border: none; background: var(--p); color: black; font-weight: bold; cursor: pointer; transition: 0.3s; font-size: 16px; margin-top: 10px; }
+        button:hover { opacity: 0.8; transform: scale(1.02); }
+        .member-card { background: #222; padding: 15px; border-radius: 10px; margin-top: 10px; border-right: 4px solid var(--p); text-align: right; position: relative; }
+        .warning-count { color: #ff4444; font-weight: bold; }
+        .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 1000; }
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid var(--p); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
-    <div id="root"></div>
 
-    <script type="text/babel">
-        const { useState, useEffect } = React;
+<div id="loading" class="loading-overlay"><div class="loader"></div></div>
 
-        // التحقق من وجود إعدادات Firebase وتجنب الانهيار
-        let db, auth, appId;
+<div class="container" id="app">
+    <h2 id="title">نظام AB OS السحابي</h2>
+    <div id="login-zone">
+        <input type="password" id="passInput" placeholder="أدخل كود الدخول">
+        <button onclick="login()">دخول</button>
+    </div>
+
+    <div id="main-zone" style="display:none;">
+        <div id="admin-controls" style="display:none;">
+            <h3>لوحة المدير</h3>
+            <input type="text" id="newName" placeholder="اسم العضو">
+            <input type="text" id="newRole" placeholder="الرتبة">
+            <input type="text" id="newCode" placeholder="كود العضو الخاص">
+            <button onclick="addMember()">إضافة عضو جديد</button>
+            <hr style="border:0.5px solid #333; margin:20px 0;">
+        </div>
+        <div id="members-list"></div>
+        <button onclick="location.reload()" style="background:#444; color:white;">تسجيل خروج</button>
+    </div>
+</div>
+
+<script>
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzVJB2OkxbZgfls2wYSAGoYeWLv1gtho5cg7AXIdG4yMbZqud6UbtOKZvAfcxpCDCT4iQ/exec";
+    let currentUser = null;
+    let allData = [];
+
+    async function loadData() {
+        showLoading(true);
         try {
-            const firebaseConfig = JSON.parse(__firebase_config);
-            if (!firebase.apps.length) {
-                firebase.initializeApp(firebaseConfig);
+            const res = await fetch(SCRIPT_URL);
+            allData = await res.json();
+            renderMembers();
+        } catch (e) { console.error("Error loading", e); }
+        showLoading(false);
+    }
+
+    function renderMembers() {
+        const list = document.getElementById('members-list');
+        list.innerHTML = "";
+        allData.forEach((m, index) => {
+            if (currentUser === 'admin' || m.code === document.getElementById('passInput').value) {
+                const div = document.createElement('div');
+                div.className = 'member-card';
+                div.innerHTML = `
+                    <strong>${m.name}</strong> (${m.role})<br>
+                    المهام: ${m.tasks || 'لا يوجد'}<br>
+                    التحذيرات: <span class="warning-count">${m.warnings || 0}</span>
+                    ${currentUser === 'admin' ? `
+                        <div style="margin-top:10px;">
+                            <button onclick="updateMember(${index}, 'warning')" style="width:auto; padding:5px 10px; background:#ff4444;">+ تحذير</button>
+                            <button onclick="editTasks(${index})" style="width:auto; padding:5px 10px; background:#444;">تعديل المهام</button>
+                        </div>
+                    ` : ''}
+                `;
+                list.appendChild(div);
             }
-            db = firebase.firestore();
-            auth = firebase.auth();
-            appId = typeof __app_id !== 'undefined' ? __app_id : 'ab-os-main-storage';
-        } catch (e) {
-            console.error("Firebase Config Error:", e);
+        });
+    }
+
+    async function login() {
+        const code = document.getElementById('passInput').value;
+        if (code === "777") {
+            currentUser = 'admin';
+            document.getElementById('admin-controls').style.display = 'block';
+        } else {
+            await loadData();
+            const user = allData.find(u => u.code === code);
+            if (user) { currentUser = 'user'; } 
+            else { alert("الكود خطأ!"); return; }
         }
+        document.getElementById('login-zone').style.display = 'none';
+        document.getElementById('main-zone').style.display = 'block';
+        if(currentUser === 'admin') loadData();
+    }
 
-        function App() {
-            const [view, setView] = useState('login');
-            const [accessCode, setAccessCode] = useState('');
-            const [isAdmin, setIsAdmin] = useState(false);
-            const [staff, setStaff] = useState({});
-            const [loading, setLoading] = useState(true);
-            const [modal, setModal] = useState({ type: null, targetCode: null });
-            const [inputVal, setInputVal] = useState('');
-            const [inputVal2, setInputVal2] = useState('');
-            const [inputVal3, setInputVal3] = useState('');
+    async function addMember() {
+        const name = document.getElementById('newName').value;
+        const role = document.getElementById('newRole').value;
+        const code = document.getElementById('newCode').value;
+        if(!name || !code) return alert("اكمل البيانات");
 
-            // محاولة تسجيل الدخول مجهولاً للوصول للبيانات
-            useEffect(() => {
-                const initSystem = async () => {
-                    try {
-                        if (auth) {
-                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                                await auth.signInWithCustomToken(__initial_auth_token).catch(() => auth.signInAnonymously());
-                            } else {
-                                await auth.signInAnonymously();
-                            }
-                        }
-                    } catch (e) {
-                        console.warn("Auth check bypassed");
-                    }
-                };
-                initSystem();
-            }, []);
+        showLoading(true);
+        await fetch(SCRIPT_URL, {
+            method: "POST",
+            body: JSON.stringify({ action: "add", name, role, code })
+        });
+        document.getElementById('newName').value = "";
+        document.getElementById('newRole').value = "";
+        document.getElementById('newCode').value = "";
+        await loadData();
+    }
 
-            // جلب البيانات من السحابة
-            useEffect(() => {
-                if (!db) {
-                    setLoading(false);
-                    return;
-                }
+    async function updateMember(index, type) {
+        showLoading(true);
+        const member = allData[index];
+        await fetch(SCRIPT_URL, {
+            method: "POST",
+            body: JSON.stringify({ action: "update", name: member.name, type: type })
+        });
+        await loadData();
+    }
 
-                const unsub = db.collection('artifacts').doc(appId)
-                    .collection('public').doc('data').collection('staffMembers')
-                    .onSnapshot((snapshot) => {
-                        const staffData = {};
-                        snapshot.forEach((doc) => { staffData[doc.id] = doc.data(); });
-                        setStaff(staffData);
-                        setLoading(false);
-                    }, (err) => {
-                        console.error("Fetch Error:", err);
-                        setLoading(false); // حتى لو فشل الاتصال، لا تترك الشاشة سوداء
-                    });
-                
-                // مؤقت أمان: إذا استغرق التحميل أكثر من 5 ثواني، افتح الصفحة
-                const timeout = setTimeout(() => setLoading(false), 5000);
+    async function editTasks(index) {
+        const newTask = prompt("أدخل المهام الجديدة:");
+        if (newTask === null) return;
+        showLoading(true);
+        await fetch(SCRIPT_URL, {
+            method: "POST",
+            body: JSON.stringify({ action: "update", name: allData[index].name, type: 'tasks', value: newTask })
+        });
+        await loadData();
+    }
 
-                return () => { unsub(); clearTimeout(timeout); };
-            }, []);
+    function showLoading(show) {
+        document.getElementById('loading').style.display = show ? 'flex' : 'none';
+    }
+</script>
 
-            const handleLogin = () => {
-                if (accessCode === "777") {
-                    setIsAdmin(true);
-                    setView('dashboard');
-                } else if (staff[accessCode]) {
-                    setIsAdmin(false);
-                    setView('dashboard');
-                } else {
-                    setModal({ type: 'error' });
-                }
-            };
-
-            const updateCloud = async (code, data) => {
-                if (!db) return;
-                try {
-                    await db.collection('artifacts').doc(appId)
-                        .collection('public').doc('data').collection('staffMembers')
-                        .doc(code).set(data, { merge: true });
-                } catch (e) {
-                    console.error("Save Error:", e);
-                }
-            };
-
-            const addStaff = async () => {
-                if (inputVal && inputVal2) {
-                    await updateCloud(inputVal2, { 
-                        name: inputVal, 
-                        rank: inputVal3 || 'عضو كادر', 
-                        tasks: [], 
-                        warnings: 0 
-                    });
-                    closeModal();
-                }
-            };
-
-            const addTask = async () => {
-                if (inputVal && modal.targetCode) {
-                    const newId = Date.now().toString();
-                    const currentTasks = staff[modal.targetCode].tasks || [];
-                    await updateCloud(modal.targetCode, {
-                        tasks: [...currentTasks, { id: newId, text: inputVal, done: false }]
-                    });
-                    closeModal();
-                }
-            };
-
-            const toggleTask = async (code, taskId) => {
-                if (!isAdmin) return;
-                const newTasks = staff[code].tasks.map(t => t.id === taskId ? { ...t, done: !t.done } : t);
-                await updateCloud(code, { tasks: newTasks });
-            };
-
-            const updateWarning = async (code, inc) => {
-                const cur = staff[code].warnings || 0;
-                const val = inc ? Math.min(cur + 1, 3) : Math.max(cur - 1, 0);
-                await updateCloud(code, { warnings: val });
-            };
-
-            const deleteStaff = async (code) => {
-                try {
-                    await db.collection('artifacts').doc(appId)
-                        .collection('public').doc('data').collection('staffMembers')
-                        .doc(code).delete();
-                    closeModal();
-                } catch(e) {}
-            };
-
-            const closeModal = () => { setModal({ type: null }); setInputVal(''); setInputVal2(''); setInputVal3(''); };
-            const calcProgress = (tasks = []) => {
-                if (tasks.length === 0) return 0;
-                return Math.round((tasks.filter(t => t.done).length / tasks.length) * 100);
-            };
-
-            if (loading) return (
-                <div className="min-h-screen flex flex-col items-center justify-center bg-[#020202]">
-                    <div className="w-16 h-16 border-4 border-[#5865F2] border-t-transparent rounded-full animate-spin mb-6"></div>
-                    <div className="text-[#5865F2] font-black text-xl animate-pulse-slow italic tracking-[0.2em]">CONNECTING TO AB CLOUD...</div>
-                </div>
-            );
-
-            if (view === 'login') return (
-                <div className="min-h-screen flex items-center justify-center p-6 bg-[#020202]">
-                    <div className="glass p-10 rounded-[3rem] w-full max-w-sm text-center shadow-2xl border-white/10">
-                        <div className="text-7xl font-black text-[#5865F2] mb-2 italic">AB</div>
-                        <p className="text-white/30 text-[10px] mb-10 font-bold uppercase tracking-[0.4em]">Global Cloud Operating System</p>
-                        <input 
-                            type="password" 
-                            placeholder="كود الدخول المخصص" 
-                            className="w-full bg-white/5 p-5 rounded-2xl text-center mb-4 border border-white/10 outline-none focus:border-[#5865F2] transition-all text-white font-bold"
-                            value={accessCode}
-                            onChange={e => setAccessCode(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                        />
-                        <button onClick={handleLogin} className="w-full ab-gradient py-5 rounded-2xl font-black shadow-lg hover:scale-[1.02] active:scale-95 transition-all italic text-white uppercase">Enter System</button>
-                    </div>
-                </div>
-            );
-
-            const curUser = isAdmin ? { name: "المدير العام", rank: "FOUNDER" } : staff[accessCode];
-
-            return (
-                <div className="min-h-screen pb-20 bg-[#020202]">
-                    <nav className="glass sticky top-0 z-50 p-5 px-8 flex justify-between items-center border-b border-white/5">
-                        <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 ab-gradient rounded-xl flex items-center justify-center font-black italic shadow-lg text-white">AB</div>
-                            <div className="text-right">
-                                <p className="font-black text-sm text-white">{curUser?.name}</p>
-                                <p className="text-[9px] text-[#5865F2] font-black tracking-tighter opacity-80 uppercase">{curUser?.rank}</p>
-                            </div>
-                        </div>
-                        <button onClick={() => setView('login')} className="text-white/20 text-[10px] font-black uppercase border border-white/5 px-4 py-2 rounded-xl">Logout</button>
-                    </nav>
-
-                    <div className="max-w-2xl mx-auto p-6 mt-6">
-                        {isAdmin ? (
-                            <div className="space-y-6">
-                                <button onClick={() => setModal({ type: 'addStaff' })} className="w-full bg-white text-black py-6 rounded-[2.5rem] font-black shadow-2xl hover:bg-gray-200 active:scale-95 transition-all text-sm uppercase italic">+ إضافة عضو كادر جديد</button>
-                                
-                                {Object.keys(staff).length === 0 && <p className="text-center py-20 text-white/10 font-black italic uppercase">Database Empty</p>}
-
-                                {Object.keys(staff).map(id => (
-                                    <div key={id} className="glass rounded-[3rem] p-7 border border-white/5 shadow-xl relative overflow-hidden mb-4">
-                                        <div className="flex justify-between items-start mb-6">
-                                            <div className="flex items-center gap-4 text-right text-white">
-                                                <div className="w-14 h-14 bg-black rounded-2xl flex items-center justify-center border border-white/5 text-[#5865F2] font-black text-2xl italic shadow-inner">{staff[id].name ? staff[id].name[0] : 'U'}</div>
-                                                <div>
-                                                    <h4 className="font-black text-lg leading-none mb-1">{staff[id].name}</h4>
-                                                    <p className="text-[10px] opacity-30 font-bold uppercase">ID: {id} • {staff[id].rank}</p>
-                                                </div>
-                                            </div>
-                                            <button onClick={() => setModal({ type: 'deleteConfirm', targetCode: id })} className="text-white/10 hover:text-red-500 transition-colors text-xl">×</button>
-                                        </div>
-                                        
-                                        <div className="grid grid-cols-2 gap-4 mb-6">
-                                            <div className="bg-black/30 p-4 rounded-3xl border border-white/5">
-                                                <div className="flex justify-between text-[9px] font-black opacity-30 mb-3 uppercase"><span>Warnings</span><div className="flex gap-2 items-center"><button onClick={()=>updateWarning(id, true)} className="text-red-500 text-lg">+</button><button onClick={()=>updateWarning(id, false)} className="text-white text-lg">-</button></div></div>
-                                                <div className="flex gap-1.5">{[1,2,3].map(i=>(<div key={i} className={`h-2 flex-1 rounded-full ${staff[id].warnings>=i?'bg-red-600 shadow-[0_0_10px_red]':'bg-white/5'}`}></div>))}</div>
-                                            </div>
-                                            <div className="bg-black/30 p-4 rounded-3xl border border-white/5">
-                                                <div className="flex justify-between text-[9px] font-black opacity-30 mb-2 uppercase"><span>Tasks</span><span>{calcProgress(staff[id].tasks)}%</span></div>
-                                                <div className="h-2 bg-black/50 rounded-full overflow-hidden mt-3"><div className="h-full ab-gradient transition-all duration-700" style={{width:`${calcProgress(staff[id].tasks)}%`}}></div></div>
-                                            </div>
-                                        </div>
-
-                                        <button onClick={()=>setModal({type:'addTask', targetCode:id})} className="w-full bg-[#5865F2]/10 text-[#5865F2] py-4 rounded-2xl font-black text-[10px] border border-[#5865F2]/20 mb-4 hover:bg-[#5865F2]/20 transition-all uppercase italic tracking-widest">Assign New Task</button>
-
-                                        <div className="space-y-2">
-                                            {staff[id].tasks?.map(t=>(
-                                                <div key={t.id} onClick={()=>toggleTask(id, t.id)} className={`flex items-center gap-4 p-4 rounded-2xl border transition-all cursor-pointer ${t.done?'opacity-20 bg-green-500/5 border-green-500/10':'bg-black/40 border-white/5'}`}>
-                                                    <div className={`w-4 h-4 rounded-full border-2 ${t.done?'bg-green-500 border-green-500':'border-white/20'}`}></div>
-                                                    <span className={`text-xs font-bold text-white ${t.done?'line-through':''}`}>{t.text}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="space-y-8">
-                                <div className="glass p-10 rounded-[4rem] text-center shadow-2xl relative overflow-hidden">
-                                    <div className="w-28 h-28 ab-gradient rounded-[2.5rem] flex items-center justify-center mx-auto mb-6 text-white font-black text-5xl italic shadow-2xl">{curUser?.name ? curUser.name[0] : 'U'}</div>
-                                    <h2 className="text-4xl font-black italic text-white">{curUser?.name}</h2>
-                                    <p className="text-[10px] text-[#5865F2] font-black uppercase tracking-[0.4em] mb-10">{curUser?.rank}</p>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="bg-black/40 p-6 rounded-[2rem] border border-white/5 text-right"><p className="text-[9px] opacity-20 font-black mb-3 uppercase">Warnings</p><div className="flex gap-2">{[1,2,3].map(i=>(<div key={i} className={`h-2.5 flex-1 rounded-full ${curUser.warnings>=i?'bg-red-600 shadow-[0_0_15px_red]':'bg-white/5'}`}></div>))}</div></div>
-                                        <div className="bg-black/40 p-6 rounded-[2rem] border border-white/5 text-right"><p className="text-[9px] opacity-20 font-black mb-1 uppercase">Completion</p><p className="text-3xl font-black italic text-white">{calcProgress(curUser?.tasks)}%</p></div>
-                                    </div>
-                                </div>
-                                <div className="glass p-8 rounded-[3rem] border border-white/5">
-                                    <p className="text-[10px] font-black opacity-20 mb-6 tracking-widest text-right uppercase">Incoming Cloud Protocols</p>
-                                    <div className="space-y-3">
-                                        {(!curUser?.tasks || curUser.tasks.length === 0) && <p className="text-center py-10 opacity-20 italic">لا توجد مهام نشطة حالياً</p>}
-                                        {curUser?.tasks?.map(t=>(
-                                            <div key={t.id} className={`p-6 rounded-[2rem] flex items-center gap-5 border ${t.done?'bg-green-500/5 border-green-500/10 opacity-40':'bg-black/50 border-white/5 shadow-xl'}`}>
-                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black ${t.done?'bg-green-600 text-white':'bg-white/5 text-[#5865F2]'}`}>{t.done?'✓':'!'}</div>
-                                                <div className="text-right"><p className="font-bold text-sm text-white">{t.text}</p><p className="text-[8px] opacity-30 mt-1 font-black uppercase tracking-tighter">{t.done?'Done':'Pending'}</p></div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    {modal.type && (
-                        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6 bg-black/90 backdrop-blur-md">
-                            <div className="glass w-full max-w-sm p-10 rounded-[3.5rem] border-white/10 text-right shadow-2xl">
-                                {modal.type === 'addStaff' && (
-                                    <div className="space-y-4">
-                                        <h3 className="text-white font-black text-center mb-6 text-xl italic uppercase">New Member</h3>
-                                        <input value={inputVal} onChange={e=>setInputVal(e.target.value)} className="w-full bg-black/50 p-5 rounded-2xl text-white border border-white/10 font-bold" placeholder="اسم الموظف"/>
-                                        <input value={inputVal2} onChange={e=>setInputVal2(e.target.value)} className="w-full bg-black/50 p-5 rounded-2xl text-white border border-white/10 font-bold" placeholder="كود الدخول المخصص"/>
-                                        <input value={inputVal3} onChange={e=>setInputVal3(e.target.value)} className="w-full bg-black/50 p-5 rounded-2xl text-white border border-white/10 font-bold" placeholder="الرتبة"/>
-                                        <button onClick={addStaff} className="w-full ab-gradient py-5 rounded-2xl font-black mt-4 text-white italic uppercase shadow-lg">Save to Cloud</button>
-                                    </div>
-                                )}
-                                {modal.type === 'addTask' && (
-                                    <div className="space-y-4">
-                                        <h3 className="text-white font-black text-center mb-6 text-xl italic uppercase">Send Protocol</h3>
-                                        <textarea value={inputVal} onChange={e=>setInputVal(e.target.value)} className="w-full bg-black/50 p-5 rounded-2xl text-white border border-white/10 h-32 resize-none font-bold" placeholder="تفاصيل المهمة..."/>
-                                        <button onClick={addTask} className="w-full ab-gradient py-5 rounded-2xl font-black mt-4 uppercase italic text-white shadow-lg">Transmit</button>
-                                    </div>
-                                )}
-                                {modal.type === 'deleteConfirm' && (
-                                    <div className="text-center py-4">
-                                        <h3 className="text-red-500 font-black text-xl mb-4">حذف نهائي؟</h3>
-                                        <p className="text-white/40 text-sm mb-8">سيتم مسح العضو من قاعدة البيانات العالمية</p>
-                                        <button onClick={()=>deleteStaff(modal.targetCode)} className="w-full bg-red-600 py-4 rounded-2xl font-black mb-3 text-white uppercase italic">Confirm Delete</button>
-                                    </div>
-                                )}
-                                {modal.type === 'error' && (
-                                    <div className="text-center py-6">
-                                        <div className="text-6xl mb-4 text-red-600">!</div>
-                                        <p className="font-black text-lg italic text-white uppercase">Invalid Access Code</p>
-                                    </div>
-                                )}
-                                <button onClick={closeModal} className="w-full text-white/20 py-4 font-black uppercase text-[10px] tracking-[0.3em] mt-2 hover:text-white transition-all">Cancel</button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            );
-        }
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
 </body>
 </html>
