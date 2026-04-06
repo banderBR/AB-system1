@@ -3,12 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AB OS | الإدارة السحابية</title>
+    <title>AB OS | الإدارة السحابية الموحدة</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+
     <style>
         body { font-family: 'Cairo', sans-serif; background-color: #020202; color: white; margin: 0; overflow-x: hidden; }
         .glass { background: rgba(15, 15, 15, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.05); }
@@ -24,26 +30,55 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // نظام تخزين محلي بسيط ليعمل الموقع فوراً بدون تعقيدات ربط خارجية حالياً
-        const saveToLocal = (data) => localStorage.setItem('ab_os_data', JSON.stringify(data));
-        const getFromLocal = () => {
-            const data = localStorage.getItem('ab_os_data');
-            return data ? JSON.parse(data) : {};
-        };
+        // إعدادات Firebase - باستخدام القيم الافتراضية للبيئة
+        const firebaseConfig = JSON.parse(__firebase_config);
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'ab-os-cloud-v20';
 
         function App() {
             const [view, setView] = useState('login');
             const [accessCode, setAccessCode] = useState('');
             const [isAdmin, setIsAdmin] = useState(false);
-            const [staff, setStaff] = useState(getFromLocal());
+            const [staff, setStaff] = useState({});
+            const [loading, setLoading] = useState(true);
             const [modal, setModal] = useState({ type: null, targetCode: null });
             const [inputVal, setInputVal] = useState('');
             const [inputVal2, setInputVal2] = useState('');
             const [inputVal3, setInputVal3] = useState('');
 
+            // تأمين الاتصال
             useEffect(() => {
-                saveToLocal(staff);
-            }, [staff]);
+                const initAuth = async () => {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await auth.signInWithCustomToken(__initial_auth_token);
+                        } else {
+                            await auth.signInAnonymously();
+                        }
+                    } catch (e) { console.error("Auth Error", e); }
+                };
+                initAuth();
+            }, []);
+
+            // جلب البيانات السحابية لحظة بلحظة
+            useEffect(() => {
+                const unsub = db.collection('artifacts').doc(appId)
+                    .collection('public').doc('data').collection('staffMembers')
+                    .onSnapshot((snapshot) => {
+                        const staffData = {};
+                        snapshot.forEach((doc) => { staffData[doc.id] = doc.data(); });
+                        setStaff(staffData);
+                        setLoading(false);
+                    }, (err) => {
+                        console.error("Firestore Error", err);
+                        setLoading(false);
+                    });
+                return () => unsub();
+            }, []);
 
             const handleLogin = () => {
                 if (accessCode === "777") {
@@ -57,54 +92,51 @@
                 }
             };
 
-            const addStaff = () => {
+            const updateCloud = async (code, data) => {
+                await db.collection('artifacts').doc(appId)
+                    .collection('public').doc('data').collection('staffMembers')
+                    .doc(code).set(data, { merge: true });
+            };
+
+            const addStaff = async () => {
                 if (inputVal && inputVal2) {
-                    setStaff(prev => ({
-                        ...prev,
-                        [inputVal2]: { name: inputVal, rank: inputVal3 || 'عضو كادر', tasks: [], warnings: 0 }
-                    }));
+                    await updateCloud(inputVal2, { 
+                        name: inputVal, 
+                        rank: inputVal3 || 'عضو كادر', 
+                        tasks: [], 
+                        warnings: 0 
+                    });
                     closeModal();
                 }
             };
 
-            const addTask = () => {
+            const addTask = async () => {
                 if (inputVal && modal.targetCode) {
                     const newId = Date.now().toString();
-                    setStaff(prev => ({
-                        ...prev,
-                        [modal.targetCode]: {
-                            ...prev[modal.targetCode],
-                            tasks: [...(prev[modal.targetCode].tasks || []), { id: newId, text: inputVal, done: false }]
-                        }
-                    }));
+                    const currentTasks = staff[modal.targetCode].tasks || [];
+                    await updateCloud(modal.targetCode, {
+                        tasks: [...currentTasks, { id: newId, text: inputVal, done: false }]
+                    });
                     closeModal();
                 }
             };
 
-            const toggleTask = (code, taskId) => {
+            const toggleTask = async (code, taskId) => {
                 if (!isAdmin) return;
-                setStaff(prev => ({
-                    ...prev,
-                    [code]: {
-                        ...prev[code],
-                        tasks: prev[code].tasks.map(t => t.id === taskId ? { ...t, done: !t.done } : t)
-                    }
-                }));
+                const newTasks = staff[code].tasks.map(t => t.id === taskId ? { ...t, done: !t.done } : t);
+                await updateCloud(code, { tasks: newTasks });
             };
 
-            const updateWarning = (code, inc) => {
+            const updateWarning = async (code, inc) => {
                 const cur = staff[code].warnings || 0;
                 const val = inc ? Math.min(cur + 1, 3) : Math.max(cur - 1, 0);
-                setStaff(prev => ({
-                    ...prev,
-                    [code]: { ...prev[code], warnings: val }
-                }));
+                await updateCloud(code, { warnings: val });
             };
 
-            const deleteStaff = (code) => {
-                const newStaff = { ...staff };
-                delete newStaff[code];
-                setStaff(newStaff);
+            const deleteStaff = async (code) => {
+                await db.collection('artifacts').doc(appId)
+                    .collection('public').doc('data').collection('staffMembers')
+                    .doc(code).delete();
                 closeModal();
             };
 
@@ -114,20 +146,26 @@
                 return Math.round((tasks.filter(t => t.done).length / tasks.length) * 100);
             };
 
+            if (loading) return (
+                <div className="min-h-screen flex items-center justify-center bg-[#020202]">
+                    <div className="text-[#5865F2] font-black text-xl animate-pulse italic uppercase tracking-[0.3em]">Linking to Cloud...</div>
+                </div>
+            );
+
             if (view === 'login') return (
-                <div className="min-h-screen flex items-center justify-center p-6">
+                <div className="min-h-screen flex items-center justify-center p-6 bg-[#020202]">
                     <div className="glass p-10 rounded-[3rem] w-full max-w-sm text-center shadow-2xl border-white/10">
                         <div className="text-7xl font-black text-[#5865F2] mb-2 italic animate-pulse">AB</div>
-                        <p className="text-white/30 text-[10px] mb-10 font-bold uppercase tracking-[0.4em]">Cloud OS v1.0</p>
+                        <p className="text-white/30 text-[10px] mb-10 font-bold uppercase tracking-[0.4em]">Global Cloud OS</p>
                         <input 
                             type="password" 
                             placeholder="كود الدخول السحابي" 
-                            className="w-full bg-white/5 p-5 rounded-2xl text-center mb-4 border border-white/10 outline-none focus:border-[#5865F2] transition-all"
+                            className="w-full bg-white/5 p-5 rounded-2xl text-center mb-4 border border-white/10 outline-none focus:border-[#5865F2] transition-all text-white font-bold"
                             value={accessCode}
                             onChange={e => setAccessCode(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && handleLogin()}
                         />
-                        <button onClick={handleLogin} className="w-full ab-gradient py-5 rounded-2xl font-black shadow-lg hover:scale-[1.02] active:scale-95 transition-all italic">ENTER SYSTEM</button>
+                        <button onClick={handleLogin} className="w-full ab-gradient py-5 rounded-2xl font-black shadow-lg hover:scale-[1.02] active:scale-95 transition-all italic text-white">ENTER GLOBAL SYSTEM</button>
                     </div>
                 </div>
             );
@@ -135,33 +173,33 @@
             const curUser = isAdmin ? { name: "المدير العام", rank: "FOUNDER" } : staff[accessCode];
 
             return (
-                <div className="min-h-screen pb-20">
+                <div className="min-h-screen pb-20 bg-[#020202]">
                     <nav className="glass sticky top-0 z-50 p-5 px-8 flex justify-between items-center border-b border-white/5">
                         <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 ab-gradient rounded-xl flex items-center justify-center font-black italic shadow-lg shadow-[#5865F2]/20">AB</div>
+                            <div className="w-10 h-10 ab-gradient rounded-xl flex items-center justify-center font-black italic shadow-lg">AB</div>
                             <div className="text-right">
                                 <p className="font-black text-sm">{curUser?.name}</p>
                                 <p className="text-[9px] text-[#5865F2] font-black tracking-tighter opacity-80">{curUser?.rank}</p>
                             </div>
                         </div>
-                        <button onClick={() => setView('login')} className="text-white/20 text-[10px] font-black uppercase border border-white/5 px-4 py-2 rounded-xl hover:bg-white/5 transition-all">Logout</button>
+                        <button onClick={() => setView('login')} className="text-white/20 text-[10px] font-black uppercase border border-white/5 px-4 py-2 rounded-xl">Logout</button>
                     </nav>
 
                     <div className="max-w-2xl mx-auto p-6 mt-6">
                         {isAdmin ? (
                             <div className="space-y-6">
-                                <button onClick={() => setModal({ type: 'addStaff' })} className="w-full bg-white text-black py-6 rounded-[2.5rem] font-black shadow-2xl hover:bg-gray-200 active:scale-95 transition-all text-sm uppercase italic">+ تسجيل كادر جديد</button>
+                                <button onClick={() => setModal({ type: 'addStaff' })} className="w-full bg-white text-black py-6 rounded-[2.5rem] font-black shadow-2xl hover:bg-gray-200 active:scale-95 transition-all text-sm uppercase italic">+ تسجيل كادر سحابي جديد</button>
                                 
-                                {Object.keys(staff).length === 0 && <p className="text-center py-20 text-white/10 font-black italic">لا يوجد أعضاء مسجلين في القاعدة حالياً</p>}
+                                {Object.keys(staff).length === 0 && <p className="text-center py-20 text-white/10 font-black italic">لا يوجد أعضاء في قاعدة البيانات السحابية</p>}
 
                                 {Object.keys(staff).map(id => (
-                                    <div key={id} className="glass rounded-[3rem] p-7 border border-white/5 shadow-xl relative overflow-hidden">
+                                    <div key={id} className="glass rounded-[3rem] p-7 border border-white/5 shadow-xl relative overflow-hidden mb-4">
                                         <div className="flex justify-between items-start mb-6">
-                                            <div className="flex items-center gap-4">
-                                                <div className="w-14 h-14 bg-black rounded-2xl flex items-center justify-center border border-white/5 text-[#5865F2] font-black text-2xl italic shadow-inner">{staff[id].name[0]}</div>
-                                                <div className="text-right">
-                                                    <h4 className="font-black text-lg">{staff[id].name}</h4>
-                                                    <p className="text-[10px] opacity-30 font-bold">ID: {id} • {staff[id].rank}</p>
+                                            <div className="flex items-center gap-4 text-right">
+                                                <div className="w-14 h-14 bg-black rounded-2xl flex items-center justify-center border border-white/5 text-[#5865F2] font-black text-2xl italic shadow-inner">{staff[id].name ? staff[id].name[0] : 'U'}</div>
+                                                <div>
+                                                    <h4 className="font-black text-lg leading-none mb-1">{staff[id].name}</h4>
+                                                    <p className="text-[10px] opacity-30 font-bold uppercase">ID: {id} • {staff[id].rank}</p>
                                                 </div>
                                             </div>
                                             <button onClick={() => setModal({ type: 'deleteConfirm', targetCode: id })} className="text-white/10 hover:text-red-500 transition-colors text-xl">×</button>
@@ -170,7 +208,7 @@
                                         <div className="grid grid-cols-2 gap-4 mb-6">
                                             <div className="bg-black/30 p-4 rounded-3xl border border-white/5">
                                                 <div className="flex justify-between text-[9px] font-black opacity-30 mb-3"><span>التحذيرات</span><div className="flex gap-2 items-center"><button onClick={()=>updateWarning(id, true)} className="text-red-500 text-lg">+</button><button onClick={()=>updateWarning(id, false)} className="text-white text-lg">-</button></div></div>
-                                                <div className="flex gap-1.5">{[1,2,3].map(i=>(<div key={i} className={`h-2 flex-1 rounded-full ${staff[id].warnings>=i?'bg-red-600 shadow-[0_0_10px_rgba(220,38,38,0.5)]':'bg-white/5'}`}></div>))}</div>
+                                                <div className="flex gap-1.5">{[1,2,3].map(i=>(<div key={i} className={`h-2 flex-1 rounded-full ${staff[id].warnings>=i?'bg-red-600 shadow-[0_0_10px_red]':'bg-white/5'}`}></div>))}</div>
                                             </div>
                                             <div className="bg-black/30 p-4 rounded-3xl border border-white/5">
                                                 <div className="flex justify-between text-[9px] font-black opacity-30 mb-2"><span>الإنجاز</span><span>{calcProgress(staff[id].tasks)}%</span></div>
@@ -194,7 +232,7 @@
                         ) : (
                             <div className="space-y-8">
                                 <div className="glass p-10 rounded-[4rem] text-center shadow-2xl relative overflow-hidden">
-                                    <div className="w-28 h-28 ab-gradient rounded-[2.5rem] flex items-center justify-center mx-auto mb-6 text-white font-black text-5xl italic shadow-2xl animate-float">{curUser?.name[0]}</div>
+                                    <div className="w-28 h-28 ab-gradient rounded-[2.5rem] flex items-center justify-center mx-auto mb-6 text-white font-black text-5xl italic shadow-2xl animate-float">{curUser?.name ? curUser.name[0] : 'U'}</div>
                                     <h2 className="text-4xl font-black italic">{curUser?.name}</h2>
                                     <p className="text-[10px] text-[#5865F2] font-black uppercase tracking-[0.4em] mb-10">{curUser?.rank}</p>
                                     <div className="grid grid-cols-2 gap-4">
@@ -203,13 +241,13 @@
                                     </div>
                                 </div>
                                 <div className="glass p-8 rounded-[3rem] border border-white/5">
-                                    <p className="text-[10px] font-black opacity-20 mb-6 tracking-widest text-right">المهمات النشطة</p>
+                                    <p className="text-[10px] font-black opacity-20 mb-6 tracking-widest text-right">أوامر المهمات النشطة</p>
                                     <div className="space-y-3">
-                                        {curUser?.tasks?.length === 0 && <p className="text-center py-10 opacity-20 italic">لا توجد أوامر حالية</p>}
+                                        {(!curUser?.tasks || curUser.tasks.length === 0) && <p className="text-center py-10 opacity-20 italic">لا توجد أوامر حالية موجهة لك</p>}
                                         {curUser?.tasks?.map(t=>(
                                             <div key={t.id} className={`p-6 rounded-[2rem] flex items-center gap-5 border ${t.done?'bg-green-500/5 border-green-500/10 opacity-40':'bg-black/50 border-white/5 shadow-xl'}`}>
                                                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black ${t.done?'bg-green-600 text-white':'bg-white/5 text-[#5865F2]'}`}>{t.done?'✓':'!'}</div>
-                                                <div className="text-right"><p className="font-bold text-sm">{t.text}</p><p className="text-[8px] opacity-30 mt-1 font-black uppercase">{t.done?'تم التنفيذ بنجاح':'انتظار البروتوكول'}</p></div>
+                                                <div className="text-right"><p className="font-bold text-sm">{t.text}</p><p className="text-[8px] opacity-30 mt-1 font-black uppercase">{t.done?'تم التنفيذ':'قيد الانتظار'}</p></div>
                                             </div>
                                         ))}
                                     </div>
@@ -223,34 +261,34 @@
                             <div className="glass w-full max-w-sm p-10 rounded-[3.5rem] border-white/10 text-right shadow-2xl">
                                 {modal.type === 'addStaff' && (
                                     <div className="space-y-4">
-                                        <h3 className="text-white font-black text-center mb-6 text-xl italic">تسجيل كادر جديد</h3>
+                                        <h3 className="text-white font-black text-center mb-6 text-xl italic">تسجيل كادر سحابي</h3>
                                         <input value={inputVal} onChange={e=>setInputVal(e.target.value)} className="w-full bg-black/50 p-5 rounded-2xl text-white border border-white/10 font-bold" placeholder="الاسم الكامل"/>
                                         <input value={inputVal2} onChange={e=>setInputVal2(e.target.value)} className="w-full bg-black/50 p-5 rounded-2xl text-white border border-white/10 font-bold" placeholder="كود الدخول المخصص"/>
                                         <input value={inputVal3} onChange={e=>setInputVal3(e.target.value)} className="w-full bg-black/50 p-5 rounded-2xl text-white border border-white/10 font-bold" placeholder="الرتبة / التخصص"/>
-                                        <button onClick={addStaff} className="w-full ab-gradient py-5 rounded-2xl font-black mt-4">حفظ في النظام</button>
+                                        <button onClick={addStaff} className="w-full ab-gradient py-5 rounded-2xl font-black mt-4 text-white">حفظ سحابياً</button>
                                     </div>
                                 )}
                                 {modal.type === 'addTask' && (
                                     <div className="space-y-4">
                                         <h3 className="text-white font-black text-center mb-6 text-xl italic">إرسال مهمة</h3>
                                         <textarea value={inputVal} onChange={e=>setInputVal(e.target.value)} className="w-full bg-black/50 p-5 rounded-2xl text-white border border-white/10 h-32 resize-none font-bold" placeholder="تفاصيل المهمة..."/>
-                                        <button onClick={addTask} className="w-full ab-gradient py-5 rounded-2xl font-black mt-4 uppercase italic">Execute Mission</button>
+                                        <button onClick={addTask} className="w-full ab-gradient py-5 rounded-2xl font-black mt-4 uppercase italic text-white">Push to Cloud</button>
                                     </div>
                                 )}
                                 {modal.type === 'deleteConfirm' && (
                                     <div className="text-center py-4">
                                         <h3 className="text-red-500 font-black text-xl mb-4">حذف العضو؟</h3>
-                                        <p className="text-white/40 text-sm mb-8">سيتم مسح كافة البيانات والمهمات المتعلقة بهذا العضو نهائياً من القاعدة</p>
-                                        <button onClick={()=>deleteStaff(modal.targetCode)} className="w-full bg-red-600 py-4 rounded-2xl font-black mb-3">تأكيد الحذف</button>
+                                        <p className="text-white/40 text-sm mb-8">سيتم مسح العضو من جميع أجهزة الكادر المشتركة في الموقع</p>
+                                        <button onClick={()=>deleteStaff(modal.targetCode)} className="w-full bg-red-600 py-4 rounded-2xl font-black mb-3 text-white">تأكيد الحذف النهائي</button>
                                     </div>
                                 )}
                                 {modal.type === 'error' && (
                                     <div className="text-center py-6">
                                         <div className="text-5xl mb-4 text-red-600">×</div>
-                                        <p className="font-black text-lg italic">الرمز غير معرف في القاعدة السحابية</p>
+                                        <p className="font-black text-lg italic">الرمز غير معرف في السحابة المشتركة</p>
                                     </div>
                                 )}
-                                <button onClick={closeModal} className="w-full text-white/20 py-4 font-black uppercase text-[10px] tracking-widest mt-2 hover:text-white transition-all">إغلاق النافذة</button>
+                                <button onClick={closeModal} className="w-full text-white/20 py-4 font-black uppercase text-[10px] tracking-widest mt-2 hover:text-white transition-all">إلغاء</button>
                             </div>
                         </div>
                     )}
