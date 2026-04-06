@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AB OS | النظام السحابي الموحد</title>
+    <title>AB OS | نظام الإدارة السحابي</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -24,7 +24,7 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // رابط السكريبت الخاص بك بعد التحديث
+        // رابط السكريبت الخاص بك
         const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxvee9AcN0gfiLcE4C2m1wc1XJ9h8qXwmpTXdDk2PnEikh9IHHrAvM1swJLuKhgZ4SUpw/exec";
 
         function App() {
@@ -37,11 +37,9 @@
             const [modal, setModal] = useState({ type: null, id: null });
             const [form, setForm] = useState({ name: '', code: '', rank: '', task: '' });
 
-            // 1. جلب البيانات من السحابة (جوجل)
             const fetchFromCloud = async () => {
                 setSyncing(true);
                 try {
-                    // إضافة timestamp لمنع المتصفح من كاش قديم
                     const response = await fetch(`${SCRIPT_URL}?t=${Date.now()}`);
                     const data = await response.json();
                     if (data) {
@@ -49,7 +47,6 @@
                         localStorage.setItem('ab_backup', JSON.stringify(data));
                     }
                 } catch (err) {
-                    console.error("Cloud Error:", err);
                     const backup = localStorage.getItem('ab_backup');
                     if (backup) setStaff(JSON.parse(backup));
                 } finally {
@@ -58,45 +55,38 @@
                 }
             };
 
-            // 2. حفظ البيانات إلى السحابة (جوجل)
             const saveToCloud = async (updatedData) => {
                 setStaff(updatedData);
                 setSyncing(true);
                 try {
                     await fetch(SCRIPT_URL, {
                         method: 'POST',
-                        mode: 'no-cors', // لضمان عدم الحظر من المتصفحات
+                        mode: 'no-cors',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ action: "save", staff: updatedData })
                     });
-                } catch (err) {
-                    console.error("Save Error:", err);
-                }
-                // إعادة الجلب للتأكد من المزامنة
-                setTimeout(fetchFromCloud, 1500);
+                } catch (err) { console.error(err); }
+                setTimeout(fetchFromCloud, 1000);
             };
 
             useEffect(() => {
                 fetchFromCloud();
-                // تحديث تلقائي كل دقيقة لضمان رؤية التعديلات من الأجهزة الأخرى
-                const interval = setInterval(fetchFromCloud, 60000);
+                const interval = setInterval(fetchFromCloud, 30000); // تحديث كل 30 ثانية
                 return () => clearInterval(interval);
             }, []);
 
             const handleLogin = () => {
-                const code = accessCode.trim();
-                if (code === "777") {
+                if (accessCode.trim() === "777") {
                     setIsAdmin(true);
                     setView('dashboard');
-                } else if (staff[code]) {
+                } else if (staff[accessCode.trim()]) {
                     setIsAdmin(false);
                     setView('dashboard');
                 } else {
-                    alert("الكود غير صحيح أو غير مسجل في السحابة");
+                    alert("الكود غير صحيح");
                 }
             };
 
-            // العمليات الإدارية
             const addEmployee = () => {
                 if (!form.name || !form.code) return;
                 const updated = { ...staff, [form.code]: { name: form.name, rank: form.rank || 'كادر', tasks: [], warnings: 0 } };
@@ -114,6 +104,14 @@
                 setForm({ ...form, task: '' });
             };
 
+            // ميزة حذف المهمة للمسؤول
+            const deleteTask = (empId, taskId, e) => {
+                e.stopPropagation(); // لمنع تفعيل خاصية الـ Toggle عند الضغط على حذف
+                const updated = { ...staff };
+                updated[empId].tasks = updated[empId].tasks.filter(t => t.id !== taskId);
+                saveToCloud(updated);
+            };
+
             const toggleTask = (empId, taskId) => {
                 if (!isAdmin) return;
                 const updated = { ...staff };
@@ -129,15 +127,17 @@
             };
 
             const deleteEmployee = (id) => {
-                const updated = { ...staff };
-                delete updated[id];
-                saveToCloud(updated);
+                if(confirm("هل أنت متأكد من حذف هذا الكادر نهائياً؟")) {
+                    const updated = { ...staff };
+                    delete updated[id];
+                    saveToCloud(updated);
+                }
             };
 
             if (loading) return (
                 <div className="h-screen flex flex-col items-center justify-center bg-black">
-                    <div className="text-5xl font-black text-[#5865F2] italic mb-4 animate-bounce">AB</div>
-                    <div className="text-[10px] tracking-[0.5em] opacity-40 uppercase">Connecting to Cloud...</div>
+                    <div className="text-6xl font-black text-[#5865F2] italic mb-4 animate-pulse">AB</div>
+                    <div className="text-[10px] tracking-[0.5em] opacity-40 uppercase">Cloud Syncing...</div>
                 </div>
             );
 
@@ -145,15 +145,15 @@
                 <div className="h-screen flex items-center justify-center p-6">
                     <div className="glass p-10 rounded-[3rem] w-full max-w-sm text-center shadow-2xl">
                         <div className="text-7xl font-black text-[#5865F2] italic mb-2">AB</div>
-                        <div className="text-[10px] tracking-[0.4em] opacity-30 mb-10 font-bold uppercase">Cloud Management OS</div>
+                        <div className="text-[10px] tracking-[0.4em] opacity-30 mb-10 font-bold uppercase">System Access</div>
                         <input 
                             type="password" 
-                            placeholder="Access Code" 
+                            placeholder="كود الدخول" 
                             className="w-full bg-black/50 p-5 rounded-2xl text-center mb-4 border border-white/5 outline-none focus:border-[#5865F2] transition-all font-bold"
                             value={accessCode}
                             onChange={e => setAccessCode(e.target.value)}
                         />
-                        <button onClick={handleLogin} className="w-full ab-gradient py-5 rounded-2xl font-black shadow-xl active:scale-95 transition-all italic">Enter System</button>
+                        <button onClick={handleLogin} className="w-full ab-gradient py-5 rounded-2xl font-black shadow-xl active:scale-95 transition-all">دخول النظام</button>
                     </div>
                 </div>
             );
@@ -167,12 +167,12 @@
                             <div className="w-10 h-10 ab-gradient rounded-xl flex items-center justify-center font-black italic">AB</div>
                             <div>
                                 <h1 className="text-sm font-black">{currentUser?.name}</h1>
-                                <p className="text-[9px] text-[#5865F2] font-black uppercase tracking-tighter">{currentUser?.rank}</p>
+                                <p className="text-[9px] text-[#5865F2] font-black uppercase">{currentUser?.rank}</p>
                             </div>
                         </div>
                         <div className="flex items-center gap-3">
                             {syncing && <div className="w-2 h-2 bg-green-500 rounded-full sync-pulse"></div>}
-                            <button onClick={() => setView('login')} className="text-[10px] opacity-20 font-black border border-white/10 px-3 py-1 rounded-lg">Exit</button>
+                            <button onClick={() => setView('login')} className="text-[10px] opacity-40 font-black px-3 py-1 border border-white/10 rounded-lg">خروج</button>
                         </div>
                     </header>
 
@@ -183,7 +183,7 @@
                                 
                                 {Object.keys(staff).map(id => (
                                     <div key={id} className="glass p-6 rounded-[2.5rem] border border-white/5 relative">
-                                        <div className="flex justify-between items-start mb-6">
+                                        <div className="flex justify-between items-start mb-6 text-right">
                                             <div className="flex items-center gap-4">
                                                 <div className="w-12 h-12 bg-black rounded-xl border border-white/5 flex items-center justify-center font-black text-[#5865F2] italic text-xl">{staff[id].name[0]}</div>
                                                 <div>
@@ -191,7 +191,7 @@
                                                     <p className="text-[9px] opacity-20 font-black uppercase">ID: {id} • {staff[id].rank}</p>
                                                 </div>
                                             </div>
-                                            <button onClick={() => deleteEmployee(id)} className="opacity-10 hover:opacity-100 text-red-500 font-bold">×</button>
+                                            <button onClick={() => deleteEmployee(id)} className="opacity-20 hover:opacity-100 text-red-500 text-xl font-bold transition-all">×</button>
                                         </div>
 
                                         <div className="grid grid-cols-2 gap-4 mb-6">
@@ -199,8 +199,8 @@
                                                 <div className="flex justify-between text-[9px] font-black opacity-30 mb-2 uppercase">
                                                     <span>Warnings</span>
                                                     <div className="flex gap-2">
-                                                        <button onClick={() => updateWarnings(id, true)} className="text-red-500">+</button>
-                                                        <button onClick={() => updateWarnings(id, false)} className="text-white">-</button>
+                                                        <button onClick={() => updateWarnings(id, true)} className="text-red-500 hover:scale-125 transition-all">+</button>
+                                                        <button onClick={() => updateWarnings(id, false)} className="text-white hover:scale-125 transition-all">-</button>
                                                     </div>
                                                 </div>
                                                 <div className="flex gap-1.5">
@@ -217,9 +217,18 @@
 
                                         <div className="space-y-2">
                                             {staff[id].tasks.map(t => (
-                                                <div key={t.id} onClick={() => toggleTask(id, t.id)} className={`p-4 rounded-xl border border-white/5 flex items-center gap-3 cursor-pointer transition-all ${t.done ? 'opacity-20' : 'bg-black/20'}`}>
-                                                    <div className={`w-3 h-3 rounded-full ${t.done ? 'bg-green-500' : 'border border-white/20'}`}></div>
-                                                    <span className={`text-xs font-bold ${t.done ? 'line-through' : ''}`}>{t.text}</span>
+                                                <div key={t.id} onClick={() => toggleTask(id, t.id)} className={`p-4 rounded-xl border border-white/5 flex items-center justify-between cursor-pointer transition-all ${t.done ? 'opacity-20' : 'bg-black/20'}`}>
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`w-3 h-3 rounded-full ${t.done ? 'bg-green-500' : 'border border-white/20'}`}></div>
+                                                        <span className={`text-xs font-bold ${t.done ? 'line-through' : ''}`}>{t.text}</span>
+                                                    </div>
+                                                    {/* زر حذف المهمة للمسؤول فقط */}
+                                                    <button 
+                                                        onClick={(e) => deleteTask(id, t.id, e)} 
+                                                        className="text-[10px] text-red-500/50 hover:text-red-500 font-black px-2 py-1"
+                                                    >
+                                                        حذف
+                                                    </button>
                                                 </div>
                                             ))}
                                         </div>
@@ -227,14 +236,14 @@
                                 ))}
                             </div>
                         ) : (
-                            <div className="space-y-6 animate-in slide-in-from-bottom-4">
+                            <div className="space-y-6">
                                 <div className="glass p-10 rounded-[3.5rem] text-center">
-                                    <div className="w-24 h-24 bg-black border border-white/5 rounded-[2rem] flex items-center justify-center mx-auto mb-6 text-4xl font-black text-[#5865F2] italic">{currentUser.name[0]}</div>
-                                    <h2 className="text-3xl font-black italic">{currentUser.name}</h2>
+                                    <div className="w-20 h-20 bg-black border border-white/5 rounded-[2rem] flex items-center justify-center mx-auto mb-6 text-3xl font-black text-[#5865F2]">{currentUser.name[0]}</div>
+                                    <h2 className="text-2xl font-black italic">{currentUser.name}</h2>
                                     <p className="text-[10px] text-[#5865F2] font-black uppercase tracking-[0.4em] mb-8">{currentUser.rank}</p>
                                     
                                     <div className="bg-black/40 p-6 rounded-3xl border border-white/5 text-right">
-                                        <p className="text-[10px] font-black opacity-20 uppercase mb-3">Warnings Status</p>
+                                        <p className="text-[10px] font-black opacity-20 uppercase mb-3 text-center">حالة الإنذارات</p>
                                         <div className="flex gap-2">
                                             {[1,2,3].map(i => <div key={i} className={`h-3 flex-1 rounded-full ${currentUser.warnings >= i ? 'bg-red-600 shadow-[0_0_10px_red]' : 'bg-white/5'}`}></div>)}
                                         </div>
@@ -242,15 +251,15 @@
                                 </div>
 
                                 <div className="glass p-8 rounded-[3rem]">
-                                    <h3 className="text-[10px] font-black opacity-20 uppercase mb-6 tracking-widest">Active Missions</h3>
+                                    <h3 className="text-[10px] font-black opacity-20 uppercase mb-6 text-center tracking-widest">المهام الموكلة إليك</h3>
                                     <div className="space-y-4">
-                                        {currentUser.tasks.length === 0 && <p className="text-center opacity-10 py-10 font-black italic">لا يوجد مهام حالياً</p>}
+                                        {currentUser.tasks.length === 0 && <p className="text-center opacity-10 py-10 font-black italic italic">لا توجد مهام حالية</p>}
                                         {currentUser.tasks.map(t => (
                                             <div key={t.id} className={`p-6 rounded-2xl border flex items-center gap-5 ${t.done ? 'bg-green-500/5 border-green-500/20 opacity-30' : 'bg-black/40 border-white/5 shadow-xl'}`}>
                                                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black ${t.done ? 'bg-green-500' : 'bg-black border border-white/10 text-white/10'}`}>{t.done ? '✓' : '!'}</div>
-                                                <div className="text-right">
+                                                <div className="text-right flex-1">
                                                     <p className={`font-black text-sm ${t.done ? 'line-through' : ''}`}>{t.text}</p>
-                                                    <p className="text-[8px] font-black opacity-20 uppercase mt-1">{t.done ? 'Completed' : 'Awaiting'}</p>
+                                                    <p className="text-[8px] font-black opacity-20 uppercase mt-1">{t.done ? 'مكتملة' : 'قيد التنفيذ'}</p>
                                                 </div>
                                             </div>
                                         ))}
@@ -261,24 +270,24 @@
                     </main>
 
                     {modal.type && (
-                        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6">
+                        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md flex items-center justify-center p-6">
                             <div className="glass w-full max-w-sm p-10 rounded-[3.5rem] border border-white/10">
                                 {modal.type === 'add' ? (
                                     <div className="space-y-4">
                                         <h2 className="text-center font-black italic mb-6">إضافة كادر جديد</h2>
-                                        <input placeholder="الاسم" className="w-full bg-black p-5 rounded-2xl text-right border border-white/5 font-bold" onChange={e=>setForm({...form, name: e.target.value})}/>
-                                        <input placeholder="كود الدخول" className="w-full bg-black p-5 rounded-2xl text-right border border-white/5 font-bold" onChange={e=>setForm({...form, code: e.target.value})}/>
-                                        <input placeholder="الرتبة" className="w-full bg-black p-5 rounded-2xl text-right border border-white/5 font-bold" onChange={e=>setForm({...form, rank: e.target.value})}/>
-                                        <button onClick={addEmployee} className="w-full ab-gradient py-5 rounded-2xl font-black mt-4 italic">حفظ في السحابة</button>
+                                        <input placeholder="الاسم" className="w-full bg-black p-5 rounded-2xl text-right border border-white/5 font-bold outline-none" onChange={e=>setForm({...form, name: e.target.value})}/>
+                                        <input placeholder="كود الدخول" className="w-full bg-black p-5 rounded-2xl text-right border border-white/5 font-bold outline-none" onChange={e=>setForm({...form, code: e.target.value})}/>
+                                        <input placeholder="الرتبة" className="w-full bg-black p-5 rounded-2xl text-right border border-white/5 font-bold outline-none" onChange={e=>setForm({...form, rank: e.target.value})}/>
+                                        <button onClick={addEmployee} className="w-full ab-gradient py-5 rounded-2xl font-black mt-4">حفظ في السحابة</button>
                                     </div>
                                 ) : (
                                     <div className="space-y-4">
                                         <h2 className="text-center font-black italic mb-6">إسناد مهمة جديدة</h2>
-                                        <textarea placeholder="تفاصيل المهمة..." className="w-full bg-black p-6 rounded-2xl text-right border border-white/5 font-bold h-32 resize-none" onChange={e=>setForm({...form, task: e.target.value})}/>
-                                        <button onClick={assignTask} className="w-full ab-gradient py-5 rounded-2xl font-black mt-4 italic">إرسال الآن</button>
+                                        <textarea placeholder="اكتب تفاصيل المهمة..." className="w-full bg-black p-6 rounded-2xl text-right border border-white/5 font-bold h-32 resize-none outline-none" onChange={e=>setForm({...form, task: e.target.value})}/>
+                                        <button onClick={assignTask} className="w-full ab-gradient py-5 rounded-2xl font-black mt-4">إرسال المهمة</button>
                                     </div>
                                 )}
-                                <button onClick={() => setModal({ type: null })} className="w-full text-[10px] font-black opacity-20 mt-4 uppercase">Close</button>
+                                <button onClick={() => setModal({ type: null })} className="w-full text-[10px] font-black opacity-20 mt-4 uppercase">إغلاق</button>
                             </div>
                         </div>
                     )}
